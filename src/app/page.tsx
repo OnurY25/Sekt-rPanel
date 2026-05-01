@@ -4,6 +4,7 @@ import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useStore } from '@/lib/store';
 import { MOCK_TENANTS } from '@/lib/mockData';
+import { loginAction } from '@/app/actions/auth';
 import { User, Tenant } from '@/types';
 import { Eye, EyeOff, Zap, Shield, BarChart3, Users } from 'lucide-react';
 
@@ -34,7 +35,6 @@ export default function LoginPage() {
     setError('');
 
     try {
-      const { loginAction } = await import('@/app/actions/auth');
       const result = await loginAction(e, password || 'Demo1234!');
       
       if (result.error) {

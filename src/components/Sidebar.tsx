@@ -4,6 +4,7 @@ import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import { useStore } from '@/lib/store';
 import { getSectorConfig } from '@/lib/sectors';
+import { logoutAction } from '@/app/actions/auth';
 import {
   LayoutDashboard, Users, ShoppingBag, CreditCard, Calendar,
   CheckSquare, BarChart3, Settings, LogOut, ChevronLeft, ChevronRight,
@@ -52,7 +53,6 @@ export default function Sidebar() {
 
   const handleLogout = async () => {
     try {
-      const { logoutAction } = await import('@/app/actions/auth');
       await logoutAction();
     } catch (e) {
       console.error(e);
@@ -66,26 +66,7 @@ export default function Sidebar() {
     return pathname.startsWith(href);
   };
 
-  const NavSection = ({ title, items }: { title?: string; items: typeof base }) => (
-    <div style={{ marginBottom: '8px' }}>
-      {title && sidebarOpen && (
-        <div style={{ fontSize: '11px', fontWeight: '600', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.1em', padding: '8px 14px 4px', marginTop: '8px' }}>
-          {title}
-        </div>
-      )}
-      {items.map(({ href, icon: Icon, label }) => (
-        <Link
-          key={href}
-          href={href}
-          className={`sidebar-nav-item ${isActive(href) ? 'active' : ''}`}
-          title={!sidebarOpen ? label : undefined}
-        >
-          <Icon size={18} className="icon" />
-          {sidebarOpen && <span style={{ flex: 1 }}>{label}</span>}
-        </Link>
-      ))}
-    </div>
-  );
+  // Inlined nav rendering to avoid creating components during render
 
   return (
     <aside className={`sidebar ${!sidebarOpen ? 'collapsed' : ''}`}>
@@ -117,9 +98,42 @@ export default function Sidebar() {
 
       {/* Nav */}
       <nav style={{ flex: 1, overflowY: 'auto', padding: '8px 0' }}>
-        <NavSection items={base} />
-        <NavSection title="Gelişmiş" items={advanced} />
-        <NavSection title="Sistem" items={system} />
+        <div style={{ marginBottom: '8px' }}>
+          {base.map(({ href, icon: Icon, label }) => (
+            <Link key={href} href={href} className={`sidebar-nav-item ${isActive(href) ? 'active' : ''}`} title={!sidebarOpen ? label : undefined}>
+              <Icon size={18} className="icon" />
+              {sidebarOpen && <span style={{ flex: 1 }}>{label}</span>}
+            </Link>
+          ))}
+        </div>
+
+        <div style={{ marginBottom: '8px' }}>
+          {sidebarOpen && (
+            <div style={{ fontSize: '11px', fontWeight: '600', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.1em', padding: '8px 14px 4px', marginTop: '8px' }}>
+              Gelişmiş
+            </div>
+          )}
+          {advanced.map(({ href, icon: Icon, label }) => (
+            <Link key={href} href={href} className={`sidebar-nav-item ${isActive(href) ? 'active' : ''}`} title={!sidebarOpen ? label : undefined}>
+              <Icon size={18} className="icon" />
+              {sidebarOpen && <span style={{ flex: 1 }}>{label}</span>}
+            </Link>
+          ))}
+        </div>
+
+        <div style={{ marginBottom: '8px' }}>
+          {sidebarOpen && (
+            <div style={{ fontSize: '11px', fontWeight: '600', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.1em', padding: '8px 14px 4px', marginTop: '8px' }}>
+              Sistem
+            </div>
+          )}
+          {system.map(({ href, icon: Icon, label }) => (
+            <Link key={href} href={href} className={`sidebar-nav-item ${isActive(href) ? 'active' : ''}`} title={!sidebarOpen ? label : undefined}>
+              <Icon size={18} className="icon" />
+              {sidebarOpen && <span style={{ flex: 1 }}>{label}</span>}
+            </Link>
+          ))}
+        </div>
       </nav>
 
       {/* User Footer */}
