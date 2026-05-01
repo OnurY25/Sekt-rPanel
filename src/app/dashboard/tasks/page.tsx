@@ -19,14 +19,14 @@ const PRIORITY_CONFIG = {
 };
 
 export default function TasksPage() {
-  const { addNotification, tasks, addTask, updateTask } = useStore();
+  const { tenant, addNotification, tasks, addTask, updateTask } = useStore();
   const [showModal, setShowModal] = useState(false);
   const [form, setForm] = useState({ title: '', assigned_to: '', status: 'todo' as TaskStatus, priority: 'medium' as 'high' | 'medium' | 'low', due_date: '' });
   const [view, setView] = useState<'kanban' | 'list'>('kanban');
 
   const handleSave = () => {
     if (!form.title) return;
-    const t: Task = { id: `t${Date.now()}`, tenant_id: 't1', ...form };
+    const t: Task = { id: `t${Date.now()}`, tenant_id: tenant?.id || 't1', ...form };
     addTask(t);
     addNotification({ title: 'Görev Eklendi', message: `"${form.title}" görevi oluşturuldu.`, type: 'success' });
     setShowModal(false);

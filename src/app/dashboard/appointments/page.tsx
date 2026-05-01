@@ -36,7 +36,7 @@ export default function AppointmentsPage() {
     if (!form.customer_id || !form.date) return;
     const customer = customers.find((c) => c.id === form.customer_id);
     const newAppt: Appointment = {
-      id: `a${Date.now()}`, tenant_id: 't1',
+      id: `a${Date.now()}`, tenant_id: tenant?.id || 't_terzi',
       customer_id: form.customer_id,
       customer: customer ? { id: customer.id, name: customer.name } : undefined,
       date: form.date, time: form.time,

@@ -50,7 +50,7 @@ export default function LoginPage() {
       
       const user: User = {
         id: result.user?.id || 'u1',
-        tenant_id: 't1',
+        tenant_id: tenantData.id,
         name: result.profile?.name || tenantData.company + ' Admin',
         email: e,
         role: 'owner',
@@ -58,7 +58,7 @@ export default function LoginPage() {
       };
 
       const tenant: Tenant = {
-        id: 't1',
+        id: tenantData.id,
         company_name: tenantData.company,
         sector: tenantData.sector as any,
         plan: tenantData.plan as any,

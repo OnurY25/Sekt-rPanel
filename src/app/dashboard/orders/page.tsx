@@ -53,7 +53,7 @@ export default function OrdersPage() {
       addNotification({ title: `${orderLabel} Güncellendi`, message: `"${form.title}" güncellendi.`, type: 'success' });
     } else {
       const newOrder: Order = {
-        id: `o${Date.now()}`, tenant_id: 't1',
+        id: `o${Date.now()}`, tenant_id: tenant?.id || 't_terzi',
         ...form, price: Number(form.price), deposit: Number(form.deposit),
         remaining_balance: Number(form.price) - Number(form.deposit),
         customer: customer ? { id: customer.id, name: customer.name } : undefined, 

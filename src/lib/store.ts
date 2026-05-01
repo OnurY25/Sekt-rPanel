@@ -32,6 +32,9 @@ interface AuthState {
   updateAppointment: (id: string, updates: Partial<Appointment>) => void;
   addTask: (task: Task) => void;
   updateTask: (id: string, updates: Partial<Task>) => void;
+  addCustomer: (customer: Customer) => void;
+  updateCustomer: (id: string, updates: Partial<Customer>) => void;
+  deleteCustomer: (id: string) => void;
 }
 
 export const useStore = create<AuthState>((set) => ({
@@ -54,7 +57,17 @@ export const useStore = create<AuthState>((set) => ({
       localStorage.setItem('saas_user', JSON.stringify(user));
       localStorage.setItem('saas_tenant', JSON.stringify(tenant));
     }
-    set({ user, tenant, token, isAuthenticated: true });
+    set({ 
+      user, 
+      tenant, 
+      token, 
+      isAuthenticated: true,
+      orders: generateMockOrders().filter(o => o.tenant_id === tenant.id),
+      payments: generateMockPayments().filter(p => p.tenant_id === tenant.id),
+      customers: generateMockCustomers().filter(c => c.tenant_id === tenant.id),
+      appointments: generateMockAppointments().filter(a => a.tenant_id === tenant.id),
+      tasks: generateMockTasks().filter(t => t.tenant_id === tenant.id),
+    });
   },
 
   logout: () => {
@@ -122,5 +135,13 @@ export const useStore = create<AuthState>((set) => ({
   addTask: (task) => set((state) => ({ tasks: [task, ...state.tasks] })),
   updateTask: (id, updates) => set((state) => ({
     tasks: state.tasks.map(t => t.id === id ? { ...t, ...updates } : t)
+  })),
+
+  addCustomer: (customer) => set((state) => ({ customers: [customer, ...state.customers] })),
+  updateCustomer: (id, updates) => set((state) => ({
+    customers: state.customers.map(c => c.id === id ? { ...c, ...updates } : c)
+  })),
+  deleteCustomer: (id) => set((state) => ({
+    customers: state.customers.filter(c => c.id !== id)
   })),
 }));

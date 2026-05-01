@@ -10,8 +10,7 @@ const formatCurrency = (n: number) =>
   new Intl.NumberFormat('tr-TR', { style: 'currency', currency: 'TRY', minimumFractionDigits: 0 }).format(n);
 
 export default function CustomersPage() {
-  const { tenant, addNotification } = useStore();
-  const [customers, setCustomers] = useState<Customer[]>(generateMockCustomers());
+  const { tenant, addNotification, customers, addCustomer, updateCustomer, deleteCustomer } = useStore();
   const [search, setSearch] = useState('');
   const [showModal, setShowModal] = useState(false);
   const [editingCustomer, setEditingCustomer] = useState<Customer | null>(null);
@@ -29,11 +28,11 @@ export default function CustomersPage() {
   const handleSave = () => {
     if (!form.name || !form.phone) return;
     if (editingCustomer) {
-      setCustomers((prev) => prev.map((c) => c.id === editingCustomer.id ? { ...c, ...form } : c));
+      updateCustomer(editingCustomer.id, form);
       addNotification({ title: 'Müşteri Güncellendi', message: `${form.name} bilgileri güncellendi.`, type: 'success' });
     } else {
-      const newC: Customer = { id: `c${Date.now()}`, tenant_id: 't1', ...form, total_orders: 0, total_spent: 0, created_at: new Date().toISOString(), tags: [] };
-      setCustomers((prev) => [newC, ...prev]);
+      const newC: Customer = { id: `c${Date.now()}`, tenant_id: tenant?.id || 't_terzi', ...form, total_orders: 0, total_spent: 0, created_at: new Date().toISOString(), tags: [] };
+      addCustomer(newC);
       addNotification({ title: 'Yeni Müşteri Eklendi', message: `${form.name} sisteme eklendi.`, type: 'success' });
     }
     setShowModal(false);
@@ -41,7 +40,7 @@ export default function CustomersPage() {
 
   const handleDelete = (id: string, name: string) => {
     if (confirm(`${name} adlı müşteriyi silmek istediğinize emin misiniz?`)) {
-      setCustomers((prev) => prev.filter((c) => c.id !== id));
+      deleteCustomer(id);
       addNotification({ title: 'Müşteri Silindi', message: `${name} sistemden silindi.`, type: 'warning' });
     }
   };
