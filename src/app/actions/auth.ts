@@ -4,8 +4,22 @@ import { createClient } from '@/lib/supabase/server';
 import { MOCK_TENANTS } from '@/lib/mockData';
 
 export async function loginAction(email: string, password?: string) {
-  const supabase = await createClient();
   const pass = password || 'Demo1234!'; // Default password for demo accounts
+
+  // If Supabase is not configured yet, allow demo mock login
+  if (!process.env.NEXT_PUBLIC_SUPABASE_URL || !process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY) {
+    const isDemo = Object.keys(MOCK_TENANTS).includes(email) || email === 'admin@demo.com';
+    if (isDemo) {
+      return { 
+        success: true, 
+        user: { id: 'mock-user-1', email },
+        profile: { name: MOCK_TENANTS[email]?.company + ' Admin' || 'Admin' } 
+      };
+    }
+    return { error: 'Supabase yapılandırılmamış ve geçersiz demo hesabı girdiniz.' };
+  }
+
+  const supabase = await createClient();
 
   // Attempt login
   let { data, error } = await supabase.auth.signInWithPassword({
@@ -52,6 +66,9 @@ export async function loginAction(email: string, password?: string) {
 }
 
 export async function logoutAction() {
+  if (!process.env.NEXT_PUBLIC_SUPABASE_URL || !process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY) {
+    return { success: true };
+  }
   const supabase = await createClient();
   await supabase.auth.signOut();
 }
