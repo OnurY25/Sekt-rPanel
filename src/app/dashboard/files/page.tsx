@@ -1,85 +1,177 @@
 'use client';
 
+import { useState, useEffect, useCallback } from 'react';
 import { useStore } from '@/lib/store';
-import { FileText, Upload, Folder, Image, FileSpreadsheet, Download, Plus } from 'lucide-react';
-
-const MOCK_FILES = [
-  { id: 'f1', name: 'Sipariş_Ahmet_Yilmaz.pdf', type: 'pdf', size: '124 KB', date: '2024-05-28', related: 'Ahmet Yılmaz' },
-  { id: 'f2', name: 'olcu_formu_terzi.xlsx', type: 'excel', size: '48 KB', date: '2024-05-26', related: 'Sipariş #001' },
-  { id: 'f3', name: 'kumaş_örneği.jpg', type: 'image', size: '2.4 MB', date: '2024-05-24', related: 'Genel' },
-  { id: 'f4', name: 'Fatura_Mayis_2024.pdf', type: 'pdf', size: '89 KB', date: '2024-05-01', related: 'Muhasebe' },
-  { id: 'f5', name: 'Müşteri_Listesi.xlsx', type: 'excel', size: '156 KB', date: '2024-04-30', related: 'Genel' },
-];
-
-const FILE_ICONS: Record<string, any> = {
-  pdf: { icon: <FileText size={20} />, color: '#ef4444', bg: 'rgba(239,68,68,0.1)' },
-  excel: { icon: <FileSpreadsheet size={20} />, color: '#10b981', bg: 'rgba(16,185,129,0.1)' },
-  image: { icon: <Image size={20} />, color: '#3b82f6', bg: 'rgba(59,130,246,0.1)' },
-  default: { icon: <FileText size={20} />, color: '#8b9ab5', bg: 'rgba(139,154,181,0.1)' },
-};
+import { createClient } from '@/lib/supabase/client';
+import { UploadCloud, FileText, Trash2, Download, Loader2, Image as ImageIcon } from 'lucide-react';
 
 export default function FilesPage() {
+  const { tenant, addNotification } = useStore();
+  const supabase = createClient();
+  
+  const [files, setFiles] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [uploading, setUploading] = useState(false);
+
+  useEffect(() => {
+    if (tenant?.id) {
+      fetchFiles();
+    }
+  }, [tenant?.id]);
+
+  const fetchFiles = async () => {
+    setLoading(true);
+    const { data, error } = await supabase
+      .storage
+      .from('documents')
+      .list(tenant?.id + '/', {
+        limit: 100,
+        sortBy: { column: 'created_at', order: 'desc' },
+      });
+
+    if (data) {
+      setFiles(data.filter(f => f.name !== '.emptyFolderPlaceholder'));
+    }
+    setLoading(false);
+  };
+
+  const handleUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (!e.target.files || e.target.files.length === 0 || !tenant?.id) return;
+    
+    setUploading(true);
+    const file = e.target.files[0];
+    const fileExt = file.name.split('.').pop();
+    const fileName = `${Math.random().toString(36).substring(2, 15)}.${fileExt}`;
+    const filePath = `${tenant.id}/${fileName}`;
+
+    const { error } = await supabase.storage
+      .from('documents')
+      .upload(filePath, file);
+
+    if (error) {
+      addNotification({ title: 'Hata', message: 'Dosya yüklenirken bir sorun oluştu.', type: 'error' });
+    } else {
+      addNotification({ title: 'Başarılı', message: 'Dosya sisteme yüklendi.', type: 'success' });
+      fetchFiles();
+    }
+    
+    setUploading(false);
+  };
+
+  const handleDelete = async (fileName: string) => {
+    if (!tenant?.id) return;
+    const { error } = await supabase.storage
+      .from('documents')
+      .remove([`${tenant.id}/${fileName}`]);
+
+    if (!error) {
+      setFiles(files.filter(f => f.name !== fileName));
+      addNotification({ title: 'Silindi', message: 'Dosya başarıyla kaldırıldı.', type: 'info' });
+    }
+  };
+
+  const getPublicUrl = (fileName: string) => {
+    if (!tenant?.id) return '';
+    const { data } = supabase.storage.from('documents').getPublicUrl(`${tenant.id}/${fileName}`);
+    return data.publicUrl;
+  };
+
+  const formatSize = (bytes: number) => {
+    if (bytes === 0) return '0 B';
+    const k = 1024;
+    const sizes = ['B', 'KB', 'MB', 'GB'];
+    const i = Math.floor(Math.log(bytes) / Math.log(k));
+    return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + ' ' + sizes[i];
+  };
+
+  if (loading) {
+    return (
+      <div style={{ height: '60vh', display: 'flex', alignItems: 'center', justifyContent: 'center', flexDirection: 'column', gap: '12px' }}>
+        <Loader2 className="animate-spin" size={32} color="#6366f1" />
+        <p style={{ color: 'var(--text-muted)', fontSize: '14px' }}>Dosyalarınız yükleniyor...</p>
+      </div>
+    );
+  }
+
   return (
     <div>
       <div className="page-header">
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
           <div>
             <h1 className="page-title">Dosya Yönetimi</h1>
-            <p className="page-subtitle">{MOCK_FILES.length} dosya · 3.0 MB kullanıldı</p>
+            <p className="page-subtitle">Sözleşmeler, tasarımlar veya müşteri dökümanları ({files.length} dosya)</p>
           </div>
-          <button className="btn btn-primary">
-            <Upload size={16} /> Dosya Yükle
-          </button>
+          <div>
+            <input 
+              type="file" 
+              id="file-upload" 
+              style={{ display: 'none' }} 
+              onChange={handleUpload}
+              disabled={uploading}
+            />
+            <label htmlFor="file-upload" className="btn btn-primary" style={{ cursor: uploading ? 'not-allowed' : 'pointer' }}>
+              {uploading ? <Loader2 className="animate-spin" size={16} /> : <UploadCloud size={16} />}
+              {uploading ? 'Yükleniyor...' : 'Yeni Dosya Yükle'}
+            </label>
+          </div>
         </div>
       </div>
 
-      {/* Upload Area */}
-      <div className="card" style={{ padding: '32px', marginBottom: '20px', textAlign: 'center', border: '2px dashed rgba(99,102,241,0.3)', background: 'rgba(99,102,241,0.03)', cursor: 'pointer' }}>
-        <Upload size={28} style={{ color: '#818cf8', margin: '0 auto 8px' }} />
-        <div style={{ fontSize: '14px', fontWeight: '600', color: 'var(--text-primary)', marginBottom: '4px' }}>Dosya Sürükle & Bırak</div>
-        <div style={{ fontSize: '12px', color: 'var(--text-muted)' }}>PDF, Excel, Word, JPG, PNG · Maks 10MB</div>
-      </div>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(250px, 1fr))', gap: '20px' }}>
+        {files.length === 0 && (
+          <div style={{ gridColumn: '1 / -1', padding: '60px', textAlign: 'center', background: 'var(--bg-card)', borderRadius: '16px', border: '1px dashed var(--border)' }}>
+            <div style={{ width: '64px', height: '64px', background: 'rgba(99,102,241,0.1)', color: '#818cf8', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 16px' }}>
+              <UploadCloud size={32} />
+            </div>
+            <h3 style={{ fontSize: '16px', fontWeight: '600', marginBottom: '8px' }}>Henüz dosya yok</h3>
+            <p style={{ color: 'var(--text-muted)', fontSize: '14px' }}>Sözleşmelerinizi veya iş dosyalarınızı buraya yükleyebilirsiniz.</p>
+          </div>
+        )}
 
-      {/* File Grid */}
-      <div className="card" style={{ padding: '20px' }}>
-        <div className="table-container">
-          <table>
-            <thead>
-              <tr>
-                <th>Dosya Adı</th>
-                <th>İlgili</th>
-                <th>Boyut</th>
-                <th>Tarih</th>
-                <th>İşlem</th>
-              </tr>
-            </thead>
-            <tbody>
-              {MOCK_FILES.map((file) => {
-                const icon = FILE_ICONS[file.type] || FILE_ICONS.default;
-                return (
-                  <tr key={file.id}>
-                    <td>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                        <div style={{ width: '36px', height: '36px', borderRadius: '8px', background: icon.bg, display: 'flex', alignItems: 'center', justifyContent: 'center', color: icon.color, flexShrink: 0 }}>
-                          {icon.icon}
-                        </div>
-                        <span style={{ fontSize: '13px', fontWeight: '500' }}>{file.name}</span>
-                      </div>
-                    </td>
-                    <td style={{ fontSize: '13px', color: 'var(--text-secondary)' }}>{file.related}</td>
-                    <td style={{ fontSize: '13px', color: 'var(--text-muted)' }}>{file.size}</td>
-                    <td style={{ fontSize: '13px', color: 'var(--text-muted)' }}>{file.date}</td>
-                    <td>
-                      <button className="btn btn-secondary btn-sm">
-                        <Download size={12} /> İndir
-                      </button>
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        </div>
+        {files.map((file) => {
+          const isImage = file.metadata?.mimetype?.startsWith('image/');
+          return (
+            <div key={file.name} className="card" style={{ padding: '20px', display: 'flex', flexDirection: 'column', gap: '16px' }}>
+              <div style={{ display: 'flex', alignItems: 'flex-start', gap: '12px' }}>
+                <div style={{ 
+                  width: '48px', height: '48px', borderRadius: '12px', flexShrink: 0,
+                  background: isImage ? 'rgba(16,185,129,0.1)' : 'rgba(99,102,241,0.1)', 
+                  color: isImage ? '#10b981' : '#6366f1',
+                  display: 'flex', alignItems: 'center', justifyContent: 'center'
+                }}>
+                  {isImage ? <ImageIcon size={24} /> : <FileText size={24} />}
+                </div>
+                <div style={{ flex: 1, overflow: 'hidden' }}>
+                  <div style={{ fontSize: '14px', fontWeight: '600', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                    {file.name}
+                  </div>
+                  <div style={{ fontSize: '12px', color: 'var(--text-muted)', marginTop: '4px' }}>
+                    {formatSize(file.metadata?.size)} • {new Date(file.created_at).toLocaleDateString('tr-TR')}
+                  </div>
+                </div>
+              </div>
+
+              <div style={{ display: 'flex', gap: '8px', marginTop: 'auto' }}>
+                <a 
+                  href={getPublicUrl(file.name)} 
+                  target="_blank" 
+                  rel="noreferrer"
+                  className="btn btn-secondary" 
+                  style={{ flex: 1, justifyContent: 'center', padding: '8px', fontSize: '12px' }}
+                >
+                  <Download size={14} style={{ marginRight: '6px' }} /> İndir
+                </a>
+                <button 
+                  onClick={() => handleDelete(file.name)}
+                  className="btn btn-danger btn-icon" 
+                  style={{ padding: '8px' }}
+                >
+                  <Trash2 size={14} />
+                </button>
+              </div>
+            </div>
+          );
+        })}
       </div>
     </div>
   );

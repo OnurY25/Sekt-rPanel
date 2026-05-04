@@ -1,194 +1,146 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useStore } from '@/lib/store';
-import { getSectorConfig } from '@/lib/sectors';
-import { Settings, Save, Globe, Palette, Bell, Database, Shield, Download } from 'lucide-react';
+import { createClient } from '@/lib/supabase/client';
+import { Save, Building2, User, Loader2 } from 'lucide-react';
 
 export default function SettingsPage() {
-  const { tenant, user } = useStore();
-  const [activeTab, setActiveTab] = useState('general');
-  const [saved, setSaved] = useState(false);
+  const { tenant, user, addNotification } = useStore();
+  const supabase = createClient();
+  
+  const [loading, setLoading] = useState(false);
+  const [form, setForm] = useState({
+    company_name: '',
+    sector: '',
+    currency: 'TRY',
+    language: 'tr'
+  });
 
-  if (!tenant || !user) return null;
-  const config = getSectorConfig(tenant.sector);
+  useEffect(() => {
+    if (tenant) {
+      setForm({
+        company_name: tenant.company_name || '',
+        sector: tenant.sector || 'other',
+        currency: tenant.currency || 'TRY',
+        language: tenant.language || 'tr'
+      });
+    }
+  }, [tenant]);
 
-  const handleSave = () => {
-    setSaved(true);
-    setTimeout(() => setSaved(false), 2000);
+  const handleSave = async () => {
+    if (!tenant?.id) return;
+    setLoading(true);
+
+    const { error } = await supabase
+      .from('tenants')
+      .update({
+        company_name: form.company_name,
+        sector: form.sector,
+        currency: form.currency,
+        language: form.language
+      })
+      .eq('id', tenant.id);
+
+    if (error) {
+      addNotification({ title: 'Hata', message: 'Ayarlar güncellenirken bir hata oluştu.', type: 'error' });
+    } else {
+      addNotification({ title: 'Başarılı', message: 'İşletme ayarları güncellendi. (Değişikliklerin tamamen yansıması için sayfayı yenilemeniz gerekebilir.)', type: 'success' });
+    }
+
+    setLoading(false);
   };
 
-  const TABS = [
-    { id: 'general', label: 'Genel', icon: <Settings size={15} /> },
-    { id: 'appearance', label: 'Görünüm', icon: <Palette size={15} /> },
-    { id: 'notifications', label: 'Bildirimler', icon: <Bell size={15} /> },
-    { id: 'data', label: 'Veri & Güvenlik', icon: <Database size={15} /> },
-  ];
+  if (!tenant) return null;
 
   return (
     <div>
       <div className="page-header">
-        <h1 className="page-title">Sistem Ayarları</h1>
-        <p className="page-subtitle">{tenant.company_name} · {config.label}</p>
+        <h1 className="page-title">Ayarlar</h1>
+        <p className="page-subtitle">İşletme profili ve platform tercihlerini yapılandırın.</p>
       </div>
 
-      <div style={{ display: 'grid', gridTemplateColumns: '220px 1fr', gap: '20px' }}>
-        {/* Sidebar Tabs */}
-        <div className="card" style={{ padding: '8px', height: 'fit-content' }}>
-          {TABS.map((tab) => (
-            <button
-              key={tab.id}
-              onClick={() => setActiveTab(tab.id)}
-              style={{
-                display: 'flex', alignItems: 'center', gap: '10px',
-                width: '100%', padding: '10px 12px', borderRadius: '8px',
-                background: activeTab === tab.id ? 'rgba(99,102,241,0.15)' : 'none',
-                color: activeTab === tab.id ? '#818cf8' : 'var(--text-secondary)',
-                border: 'none', cursor: 'pointer', fontSize: '13px', fontWeight: '500',
-                textAlign: 'left', transition: 'all 0.2s',
-              }}
-            >
-              {tab.icon} {tab.label}
-            </button>
-          ))}
-        </div>
-
-        {/* Content */}
-        <div>
-          {activeTab === 'general' && (
-            <div className="card" style={{ padding: '24px' }}>
-              <h3 style={{ fontSize: '16px', fontWeight: '700', marginBottom: '20px' }}>Firma Bilgileri</h3>
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px', marginBottom: '16px' }}>
-                {[
-                  { label: 'Firma Adı', value: tenant.company_name, placeholder: 'Firma adı' },
-                  { label: 'Sektör', value: config.label, placeholder: '', disabled: true },
-                  { label: 'Telefon', value: '0532 000 0000', placeholder: '' },
-                  { label: 'E-posta', value: user.email, placeholder: '' },
-                ].map((f, i) => (
-                  <div key={i}>
-                    <label className="input-label">{f.label}</label>
-                    <input className="input" defaultValue={f.value} placeholder={f.placeholder} disabled={f.disabled} style={f.disabled ? { opacity: 0.5, cursor: 'not-allowed' } : {}} />
-                  </div>
-                ))}
-              </div>
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px', marginBottom: '20px' }}>
-                <div>
-                  <label className="input-label">Para Birimi</label>
-                  <select className="input" defaultValue={tenant.currency}>
-                    <option value="TRY">₺ Türk Lirası (TRY)</option>
-                    <option value="USD">$ Amerikan Doları (USD)</option>
-                    <option value="EUR">€ Euro (EUR)</option>
-                  </select>
-                </div>
-                <div>
-                  <label className="input-label">Dil</label>
-                  <select className="input" defaultValue="tr">
-                    <option value="tr">🇹🇷 Türkçe</option>
-                    <option value="en">🇬🇧 English</option>
-                    <option value="de">🇩🇪 Deutsch</option>
-                  </select>
-                </div>
+      <div style={{ display: 'grid', gap: '24px', maxWidth: '800px' }}>
+        {/* İşletme Profili */}
+        <div className="card">
+          <div style={{ padding: '20px 24px', borderBottom: '1px solid var(--border)', display: 'flex', alignItems: 'center', gap: '12px' }}>
+            <div style={{ width: '40px', height: '40px', borderRadius: '10px', background: 'rgba(99,102,241,0.1)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#6366f1' }}>
+              <Building2 size={20} />
+            </div>
+            <div>
+              <h2 style={{ fontSize: '16px', fontWeight: '600', color: 'var(--text-primary)' }}>İşletme Profili</h2>
+              <p style={{ fontSize: '13px', color: 'var(--text-muted)' }}>Temel işletme bilgilerinizi güncelleyin.</p>
+            </div>
+          </div>
+          
+          <div style={{ padding: '24px', display: 'flex', flexDirection: 'column', gap: '16px' }}>
+            <div>
+              <label className="input-label">Firma Adı</label>
+              <input 
+                className="input" 
+                value={form.company_name} 
+                onChange={e => setForm({...form, company_name: e.target.value})} 
+                placeholder="Örn: Yıldız Mobilya"
+              />
+            </div>
+            
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
+              <div>
+                <label className="input-label">Sektör</label>
+                <select className="input" value={form.sector} onChange={e => setForm({...form, sector: e.target.value})}>
+                  <option value="dental">Diş Kliniği</option>
+                  <option value="tailor">Terzi & Moda</option>
+                  <option value="autoservice">Oto Servis</option>
+                  <option value="furniture">Mobilya İmalat</option>
+                  <option value="other">Diğer</option>
+                </select>
               </div>
               <div>
-                <label className="input-label">Adres</label>
-                <textarea className="input" placeholder="İşletme adresi..." />
-              </div>
-              <div style={{ marginTop: '20px' }}>
-                <button className="btn btn-primary" onClick={handleSave}>
-                  {saved ? '✓ Kaydedildi' : <><Save size={14} /> Kaydet</>}
-                </button>
-              </div>
-            </div>
-          )}
-
-          {activeTab === 'appearance' && (
-            <div className="card" style={{ padding: '24px' }}>
-              <h3 style={{ fontSize: '16px', fontWeight: '700', marginBottom: '20px' }}>Görünüm Ayarları</h3>
-              <div style={{ marginBottom: '20px' }}>
-                <label className="input-label">Tema Rengi</label>
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(6, 1fr)', gap: '8px', marginTop: '8px' }}>
-                  {['#6366f1', '#8b5cf6', '#10b981', '#f59e0b', '#3b82f6', '#ef4444'].map((color) => (
-                    <div key={color} style={{
-                      width: '100%', paddingBottom: '100%', borderRadius: '10px', background: color,
-                      cursor: 'pointer', position: 'relative', boxShadow: `0 4px 12px ${color}40`,
-                    }} />
-                  ))}
-                </div>
-              </div>
-              <div style={{ marginBottom: '20px' }}>
-                <label className="input-label">Sidebar Stili</label>
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
-                  {[
-                    { label: 'Koyu (Mevcut)', active: true },
-                    { label: 'Çok Koyu', active: false },
-                  ].map((s, i) => (
-                    <div key={i} style={{ padding: '14px', borderRadius: '10px', border: `1px solid ${s.active ? '#6366f1' : 'var(--border)'}`, background: s.active ? 'rgba(99,102,241,0.1)' : 'rgba(255,255,255,0.02)', cursor: 'pointer', textAlign: 'center', fontSize: '13px', color: s.active ? '#818cf8' : 'var(--text-secondary)', fontWeight: '500' }}>
-                      {s.label}
-                    </div>
-                  ))}
-                </div>
-              </div>
-              <button className="btn btn-primary" onClick={handleSave}>
-                {saved ? '✓ Kaydedildi' : <><Save size={14} /> Kaydet</>}
-              </button>
-            </div>
-          )}
-
-          {activeTab === 'notifications' && (
-            <div className="card" style={{ padding: '24px' }}>
-              <h3 style={{ fontSize: '16px', fontWeight: '700', marginBottom: '20px' }}>Bildirim Tercihleri</h3>
-              {[
-                { label: 'Yeni sipariş bildirimi', desc: 'Sipariş oluşturulduğunda bildir' },
-                { label: 'Randevu hatırlatması', desc: 'Randevudan 1 saat önce hatırlat' },
-                { label: 'Ödeme bildirimi', desc: 'Ödeme alındığında bildir' },
-                { label: 'Gecikmiş sipariş uyarısı', desc: 'Teslim tarihi geçen siparişler' },
-                { label: 'Görev hatırlatması', desc: 'Bitiş tarihi yaklaşan görevler' },
-              ].map((item, i) => (
-                <div key={i} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '14px 0', borderBottom: '1px solid var(--border)' }}>
-                  <div>
-                    <div style={{ fontSize: '13px', fontWeight: '500', color: 'var(--text-primary)' }}>{item.label}</div>
-                    <div style={{ fontSize: '12px', color: 'var(--text-muted)' }}>{item.desc}</div>
-                  </div>
-                  <div style={{
-                    width: '44px', height: '24px', borderRadius: '12px', cursor: 'pointer',
-                    background: 'linear-gradient(135deg, #6366f1, #8b5cf6)', position: 'relative',
-                  }}>
-                    <div style={{ width: '18px', height: '18px', borderRadius: '50%', background: 'white', position: 'absolute', top: '3px', left: '23px', boxShadow: '0 1px 3px rgba(0,0,0,0.3)' }} />
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
-
-          {activeTab === 'data' && (
-            <div className="card" style={{ padding: '24px' }}>
-              <h3 style={{ fontSize: '16px', fontWeight: '700', marginBottom: '20px' }}>Veri & Güvenlik</h3>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', marginBottom: '24px' }}>
-                {[
-                  { label: 'Veriyi Excel Olarak Dışa Aktar', desc: 'Tüm müşteri ve sipariş verilerini indirin', icon: <Download size={16} />, color: '#10b981' },
-                  { label: 'JSON Formatında İndir', desc: 'Ham veri dışa aktarımı', icon: <Download size={16} />, color: '#3b82f6' },
-                  { label: 'Yedek Oluştur', desc: 'Anlık veritabanı yedeği', icon: <Database size={16} />, color: '#6366f1' },
-                ].map((action, i) => (
-                  <button key={i} style={{ display: 'flex', alignItems: 'center', gap: '12px', padding: '14px 16px', borderRadius: '10px', background: `${action.color}10`, border: `1px solid ${action.color}20`, cursor: 'pointer', textAlign: 'left', color: action.color }}>
-                    {action.icon}
-                    <div>
-                      <div style={{ fontSize: '13px', fontWeight: '600', color: 'var(--text-primary)' }}>{action.label}</div>
-                      <div style={{ fontSize: '12px', color: 'var(--text-muted)' }}>{action.desc}</div>
-                    </div>
-                  </button>
-                ))}
-              </div>
-
-              <div style={{ padding: '16px', borderRadius: '10px', background: 'rgba(239,68,68,0.08)', border: '1px solid rgba(239,68,68,0.2)' }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '8px' }}>
-                  <Shield size={16} style={{ color: '#ef4444' }} />
-                  <span style={{ fontSize: '13px', fontWeight: '700', color: '#ef4444' }}>Tehlikeli Bölge</span>
-                </div>
-                <p style={{ fontSize: '12px', color: 'var(--text-muted)', marginBottom: '12px' }}>Bu işlemler geri alınamaz. Dikkatli olun.</p>
-                <button className="btn btn-danger btn-sm">Hesabı Sil</button>
+                <label className="input-label">Para Birimi</label>
+                <select className="input" value={form.currency} onChange={e => setForm({...form, currency: e.target.value})}>
+                  <option value="TRY">Türk Lirası (₺)</option>
+                  <option value="USD">Amerikan Doları ($)</option>
+                  <option value="EUR">Euro (€)</option>
+                </select>
               </div>
             </div>
-          )}
+          </div>
+          
+          <div style={{ padding: '16px 24px', borderTop: '1px solid var(--border)', background: 'var(--bg-secondary)', display: 'flex', justifyContent: 'flex-end', borderBottomLeftRadius: '16px', borderBottomRightRadius: '16px' }}>
+            <button className="btn btn-primary" onClick={handleSave} disabled={loading}>
+              {loading ? <Loader2 className="animate-spin" size={16} /> : <Save size={16} />}
+              Değişiklikleri Kaydet
+            </button>
+          </div>
+        </div>
+
+        {/* Kullanıcı Profili (Read Only for now) */}
+        <div className="card">
+          <div style={{ padding: '20px 24px', borderBottom: '1px solid var(--border)', display: 'flex', alignItems: 'center', gap: '12px' }}>
+            <div style={{ width: '40px', height: '40px', borderRadius: '10px', background: 'rgba(16,185,129,0.1)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#10b981' }}>
+              <User size={20} />
+            </div>
+            <div>
+              <h2 style={{ fontSize: '16px', fontWeight: '600', color: 'var(--text-primary)' }}>Hesap Bilgileri</h2>
+              <p style={{ fontSize: '13px', color: 'var(--text-muted)' }}>Giriş yaptığınız hesap ve yetkiler.</p>
+            </div>
+          </div>
+          
+          <div style={{ padding: '24px', display: 'flex', flexDirection: 'column', gap: '16px' }}>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
+              <div>
+                <label className="input-label">Kullanıcı Adı</label>
+                <input className="input" value={user?.name || ''} disabled style={{ opacity: 0.7 }} />
+              </div>
+              <div>
+                <label className="input-label">E-posta</label>
+                <input className="input" value={user?.email || ''} disabled style={{ opacity: 0.7 }} />
+              </div>
+            </div>
+            <div>
+              <p style={{ fontSize: '12px', color: 'var(--text-muted)' }}>* E-posta ve şifre değişiklikleri güvenlik sebebiyle şu anlık kapalıdır.</p>
+            </div>
+          </div>
         </div>
       </div>
     </div>

@@ -3,6 +3,7 @@
 import { useState } from 'react';
 import { Sparkles, X, MessageSquare, FileText, Send, Bot } from 'lucide-react';
 import { useStore } from '@/lib/store';
+import { createClient } from '@/lib/supabase/client';
 
 export default function AIAssistant() {
   const [isOpen, setIsOpen] = useState(false);
@@ -13,21 +14,68 @@ export default function AIAssistant() {
   ]);
   const [isTyping, setIsTyping] = useState(false);
   const { tenant } = useStore();
+  const supabase = createClient();
 
-  const handleSend = () => {
+  const fetchContextData = async () => {
+    if (!tenant) return {};
+    
+    const [custRes, orderRes, payRes, apptRes] = await Promise.all([
+      supabase.from('customers').select('id', { count: 'exact' }),
+      supabase.from('orders').select('id, status'),
+      supabase.from('payments').select('amount, paid_at'),
+      supabase.from('appointments').select('id', { count: 'exact' }).eq('date', new Date().toISOString().split('T')[0])
+    ]);
+
+    const pendingOrders = (orderRes.data || []).filter(o => ['pending', 'in_progress'].includes(o.status)).length;
+    
+    const now = new Date();
+    const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+    const monthlyRevenue = (payRes.data || [])
+      .filter(p => new Date(p.paid_at) >= startOfMonth)
+      .reduce((sum, p) => sum + p.amount, 0);
+
+    return {
+      customersCount: custRes.count || 0,
+      pendingOrdersCount: pendingOrders,
+      monthlyRevenue,
+      todayApptsCount: apptRes.count || 0
+    };
+  };
+
+  const handleSend = async () => {
     if (!query.trim()) return;
     
-    setMessages(prev => [...prev, { role: 'user', text: query }]);
+    const userText = query;
+    const newMessages = [...messages, { role: 'user' as const, text: userText }];
+    setMessages(newMessages);
     setQuery('');
     setIsTyping(true);
 
-    setTimeout(() => {
-      setMessages(prev => [...prev, { 
-        role: 'ai', 
-        text: `Bu harika bir soru. ${tenant?.sector === 'tailor' ? 'Terzi atölyenizdeki' : tenant?.sector === 'furniture' ? 'Mobilya üretiminizdeki' : 'İşletmenizdeki'} son verilere baktığımda, bu hafta performansın %12 arttığını görüyorum. Detaylı analiz için Raporlar sekmesine göz atabilirsiniz.` 
-      }]);
+    try {
+      const contextData = await fetchContextData();
+      
+      const response = await fetch('/api/chat', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          messages: newMessages,
+          tenant,
+          contextData
+        }),
+      });
+
+      const data = await response.json();
+
+      if (response.ok) {
+        setMessages(prev => [...prev, { role: 'ai', text: data.reply }]);
+      } else {
+        setMessages(prev => [...prev, { role: 'ai', text: `Hata: ${data.error || 'Bilinmeyen bir sorun oluştu.'}` }]);
+      }
+    } catch (error) {
+      setMessages(prev => [...prev, { role: 'ai', text: 'Bağlantı hatası oluştu. Lütfen internetinizi kontrol edin.' }]);
+    } finally {
       setIsTyping(false);
-    }, 1500);
+    }
   };
 
   if (!isOpen) {
@@ -71,7 +119,8 @@ export default function AIAssistant() {
           </div>
           <div>
             <div style={{ fontSize: '15px', fontWeight: '700', color: 'var(--text-primary)' }}>SektörAI Katmanı</div>
-            <div style={{ fontSize: '12px', color: '#818cf8', fontWeight: '500' }}>Akıllı İşletme Asistanı</div>
+            <div style={{ fontSize: '12px', color: '#818cf8', fontWeight: '500' }}>Claude 3.5 Sonnet Destekli Asistan</div>
+
           </div>
         </div>
         <button onClick={() => setIsOpen(false)} style={{ background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer' }}>
@@ -119,6 +168,7 @@ export default function AIAssistant() {
                   border: msg.role === 'user' ? 'none' : '1px solid var(--border)',
                   borderTopRightRadius: msg.role === 'user' ? '4px' : '16px',
                   borderTopLeftRadius: msg.role === 'ai' ? '4px' : '16px',
+                  whiteSpace: 'pre-wrap'
                 }}>
                   {msg.text}
                 </div>
@@ -172,12 +222,17 @@ export default function AIAssistant() {
           <p style={{ fontSize: '13px', color: 'var(--text-muted)', marginBottom: '8px' }}>Yapay zeka ile saniyeler içinde içerik üretin.</p>
           
           {[
-            { title: 'Teklif Oluştur', desc: 'Müşteriye özel profesyonel fiyat teklifi', icon: '📄' },
-            { title: 'Mesaj Taslağı', desc: 'WhatsApp için otomatik yanıt taslağı', icon: '💬' },
-            { title: 'Haftalık Rapor', desc: 'Satış ve performans özeti', icon: '📊' },
-            { title: 'Tahsilat Hatırlatıcı', desc: 'Kibar ödeme hatırlatma mesajı', icon: '💳' },
+            { title: 'Teklif Oluştur', desc: 'Müşteriye özel profesyonel fiyat teklifi', icon: '📄', prompt: 'Müşteriye standart bir hizmet için fiyat teklifi metni oluştur.' },
+            { title: 'Mesaj Taslağı', desc: 'WhatsApp için otomatik yanıt taslağı', icon: '💬', prompt: 'Müşteriye siparişinin hazır olduğunu bildiren kısa, profesyonel bir WhatsApp mesajı yaz.' },
+            { title: 'Haftalık Rapor', desc: 'Satış ve performans özeti', icon: '📊', prompt: 'Son haftanın performansını özetleyen yöneticiye sunulacak kısa bir metin hazırla.' },
+            { title: 'Tahsilat Hatırlatıcı', desc: 'Kibar ödeme hatırlatma mesajı', icon: '💳', prompt: 'Ödemesi geciken bir müşteriye gönderilecek çok kibar ve anlayışlı bir tahsilat hatırlatma mesajı yaz.' },
           ].map((item, i) => (
-            <button key={i} style={{
+            <button key={i} 
+            onClick={() => {
+              setActiveTab('chat');
+              setQuery(item.prompt);
+            }}
+            style={{
               display: 'flex', alignItems: 'center', gap: '12px', padding: '14px', borderRadius: '12px',
               background: 'rgba(255,255,255,0.02)', border: '1px solid var(--border)', cursor: 'pointer',
               textAlign: 'left', transition: 'all 0.2s'

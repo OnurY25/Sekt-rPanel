@@ -2,18 +2,58 @@
 
 import { useStore } from '@/lib/store';
 import { getSectorConfig } from '@/lib/sectors';
+import { createClient } from '@/lib/supabase/client';
 import { Bell, Search, Menu, Plus, ChevronDown } from 'lucide-react';
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 
 export default function Topbar({ title, subtitle }: { title?: string; subtitle?: string }) {
-  const { tenant, user, notifications, markAllRead, toggleSidebar } = useStore();
+  const { tenant, user, toggleSidebar } = useStore();
+  const supabase = createClient();
+  
   const [showNotifs, setShowNotifs] = useState(false);
   const [showProfile, setShowProfile] = useState(false);
+  const [dbNotifications, setDbNotifications] = useState<any[]>([]);
+
+  useEffect(() => {
+    if (tenant?.id) {
+      fetchNotifications();
+
+      const channel = supabase
+        .channel('notifications_changes')
+        .on(
+          'postgres_changes',
+          { event: '*', schema: 'public', table: 'notifications', filter: `tenant_id=eq.${tenant.id}` },
+          (payload) => {
+            fetchNotifications(); // Refresh on any change
+          }
+        )
+        .subscribe();
+
+      return () => {
+        supabase.removeChannel(channel);
+      };
+    }
+  }, [tenant?.id]);
+
+  const fetchNotifications = async () => {
+    const { data } = await supabase
+      .from('notifications')
+      .select('*')
+      .order('created_at', { ascending: false })
+      .limit(20);
+    if (data) setDbNotifications(data);
+  };
+
+  const markAllRead = async () => {
+    if (!tenant?.id) return;
+    await supabase.from('notifications').update({ read: true }).eq('tenant_id', tenant.id).eq('read', false);
+    setDbNotifications(prev => prev.map(n => ({ ...n, read: true })));
+  };
 
   if (!tenant || !user) return null;
 
   const config = getSectorConfig(tenant.sector);
-  const unread = notifications.filter((n) => !n.read).length;
+  const unread = dbNotifications.filter((n) => !n.read).length;
 
   const PLAN_COLORS: Record<string, string> = {
     trial: '#f59e0b',
@@ -72,22 +112,25 @@ export default function Topbar({ title, subtitle }: { title?: string; subtitle?:
                   </button>
                 )}
               </div>
-              {notifications.length === 0 ? (
+              {dbNotifications.length === 0 ? (
                 <div style={{ padding: '32px', textAlign: 'center', color: 'var(--text-muted)', fontSize: '14px' }}>
                   Bildirim bulunmuyor
                 </div>
               ) : (
-                notifications.slice(0, 8).map((n) => (
-                  <div key={n.id} style={{
-                    padding: '12px 16px',
-                    borderBottom: '1px solid var(--border)',
-                    background: n.read ? 'transparent' : 'rgba(99,102,241,0.04)',
-                    cursor: 'pointer',
-                  }}>
-                    <div style={{ fontSize: '13px', fontWeight: '500', color: 'var(--text-primary)' }}>{n.title}</div>
-                    <div style={{ fontSize: '12px', color: 'var(--text-muted)', marginTop: '2px' }}>{n.message}</div>
-                  </div>
-                ))
+                <div style={{ maxHeight: '300px', overflowY: 'auto' }}>
+                  {dbNotifications.map((n) => (
+                    <div key={n.id} style={{
+                      padding: '12px 16px',
+                      borderBottom: '1px solid var(--border)',
+                      background: n.read ? 'transparent' : 'rgba(99,102,241,0.04)',
+                      cursor: 'pointer',
+                    }}>
+                      <div style={{ fontSize: '13px', fontWeight: '500', color: 'var(--text-primary)' }}>{n.title}</div>
+                      <div style={{ fontSize: '12px', color: 'var(--text-muted)', marginTop: '2px' }}>{n.message}</div>
+                      <div style={{ fontSize: '10px', color: 'var(--text-muted)', marginTop: '4px' }}>{new Date(n.created_at).toLocaleString('tr-TR')}</div>
+                    </div>
+                  ))}
+                </div>
               )}
             </div>
           )}
