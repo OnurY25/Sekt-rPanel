@@ -119,7 +119,7 @@ export default function AIAssistant() {
           </div>
           <div>
             <div style={{ fontSize: '15px', fontWeight: '700', color: 'var(--text-primary)' }}>SektörAI Katmanı</div>
-            <div style={{ fontSize: '12px', color: '#818cf8', fontWeight: '500' }}>Claude 3.5 Sonnet Destekli Asistan</div>
+            <div style={{ fontSize: '12px', color: '#818cf8', fontWeight: '500' }}>Claude 4.6 Sonnet Destekli Asistan</div>
 
           </div>
         </div>
