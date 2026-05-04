@@ -50,7 +50,9 @@ export async function loginAction(email: string, password?: string) {
       return { error: 'E-posta veya şifre hatalı.' };
     }
   } else if (error) {
-    return { error: error.message };
+    let msg = error.message;
+    if (msg.includes('Email not confirmed')) msg = 'Lütfen e-posta adresinizi doğrulayın. (Eğer test ortamındaysanız Supabase panelinden "Confirm Email" ayarını kapatın)';
+    return { error: msg };
   }
 
   // At this point we are authenticated. We need to check if the tenant exists.
@@ -89,7 +91,15 @@ export async function registerAction(email: string, password: string, company_na
   });
 
   if (error) {
-    return { error: error.message };
+    let msg = error.message;
+    if (msg.includes('already registered')) msg = 'Bu e-posta adresi zaten sistemimizde kayıtlı.';
+    if (msg.includes('Password should be at least')) msg = 'Şifreniz en az 6 karakter olmalıdır.';
+    if (msg.includes('rate limit')) msg = 'Çok fazla kayıt denemesi yaptınız, lütfen birkaç dakika bekleyin.';
+    return { error: msg };
+  }
+
+  if (!data.session) {
+    return { error: 'Kayıt başarılı! Ancak sisteme girmek için Supabase üzerinden "Confirm Email" (E-posta Doğrulama) ayarını kapatmanız veya mailinize gelen linki onaylamanız gerekmektedir.' };
   }
 
   return { success: true, user: data.user };
