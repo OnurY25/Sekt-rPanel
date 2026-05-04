@@ -72,3 +72,25 @@ export async function logoutAction() {
   const supabase = await createClient();
   await supabase.auth.signOut();
 }
+
+export async function registerAction(email: string, password: string, company_name: string, sector: string) {
+  const supabase = await createClient();
+
+  const { data, error } = await supabase.auth.signUp({
+    email,
+    password,
+    options: {
+      data: {
+        full_name: company_name + ' Yöneticisi',
+        company_name,
+        sector
+      }
+    }
+  });
+
+  if (error) {
+    return { error: error.message };
+  }
+
+  return { success: true, user: data.user };
+}

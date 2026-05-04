@@ -21,13 +21,16 @@ export default function LandingPage() {
   const { setAuth } = useStore();
   
   // Login State
+  const [isRegister, setIsRegister] = useState(false);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [companyName, setCompanyName] = useState('');
+  const [sector, setSector] = useState('other');
   const [showPass, setShowPass] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
 
-  const handleLogin = async (loginEmail?: string) => {
+  const handleAuth = async (loginEmail?: string) => {
     const e = loginEmail || email;
     if (!e) {
       setError('Lütfen e-posta adresi girin.');
@@ -37,6 +40,27 @@ export default function LandingPage() {
     setError('');
 
     try {
+      if (isRegister && !loginEmail) {
+        if (!companyName) {
+          setError('Lütfen işletme adınızı girin.');
+          setLoading(false);
+          return;
+        }
+        if (password.length < 6) {
+          setError('Şifre en az 6 karakter olmalıdır.');
+          setLoading(false);
+          return;
+        }
+        const { registerAction } = await import('@/app/actions/auth');
+        const res = await registerAction(e, password, companyName, sector);
+        if (res.error) {
+          setError(res.error);
+          setLoading(false);
+          return;
+        }
+        // Auto-login after successful registration is handled by Supabase session internally, but we can call loginAction to get the profile and route.
+      }
+
       const result = await loginAction(e, password || 'Demo1234!');
       
       if (result.error) {
@@ -45,12 +69,12 @@ export default function LandingPage() {
         return;
       }
 
-      const tenantData = MOCK_TENANTS[e] || MOCK_TENANTS['admin@demo.com'];
+      const tenantData = MOCK_TENANTS[e] || { id: 'new-tenant', company: companyName, sector, plan: 'trial' };
       
       const user: User = {
         id: result.user?.id || 'u1',
         tenant_id: tenantData.id,
-        name: result.profile?.name || tenantData.company + ' Admin',
+        name: result.profile?.name || tenantData.company + ' Yöneticisi',
         email: e,
         role: 'owner',
         created_at: new Date().toISOString(),
@@ -70,12 +94,18 @@ export default function LandingPage() {
       setAuth(user, tenant, 'supabase-secure-session');
       router.push('/dashboard');
     } catch (err: any) {
-      setError(err.message || 'Giriş yapılırken bir hata oluştu.');
+      setError(err.message || 'Bir hata oluştu.');
       setLoading(false);
     }
   };
 
   const scrollToLogin = () => {
+    setIsRegister(false);
+    document.getElementById('login-section')?.scrollIntoView({ behavior: 'smooth' });
+  };
+
+  const scrollToRegister = () => {
+    setIsRegister(true);
     document.getElementById('login-section')?.scrollIntoView({ behavior: 'smooth' });
   };
 
@@ -96,8 +126,9 @@ export default function LandingPage() {
         <div style={{ display: 'flex', gap: '24px', alignItems: 'center', fontSize: '14px', fontWeight: '500', color: '#a1a1aa' }}>
           <a href="#features" style={{ cursor: 'pointer', transition: 'color 0.2s' }} onMouseEnter={(e) => (e.target as any).style.color = '#fff'} onMouseLeave={(e) => (e.target as any).style.color = '#a1a1aa'}>Özellikler</a>
           <a href="#sectors" style={{ cursor: 'pointer', transition: 'color 0.2s' }} onMouseEnter={(e) => (e.target as any).style.color = '#fff'} onMouseLeave={(e) => (e.target as any).style.color = '#a1a1aa'}>Sektörler</a>
-          <button onClick={scrollToLogin} style={{ padding: '10px 20px', borderRadius: '8px', background: '#fff', color: '#000', fontWeight: '600', cursor: 'pointer', border: 'none', transition: 'transform 0.2s' }} onMouseEnter={(e) => (e.target as any).style.transform = 'scale(1.05)'} onMouseLeave={(e) => (e.target as any).style.transform = 'scale(1)'}>
-            Giriş Yap
+          <button onClick={scrollToLogin} style={{ padding: '8px 16px', color: '#fff', background: 'transparent', border: 'none', fontWeight: '600', cursor: 'pointer' }}>Giriş Yap</button>
+          <button onClick={scrollToRegister} style={{ padding: '10px 20px', borderRadius: '8px', background: '#fff', color: '#000', fontWeight: '600', cursor: 'pointer', border: 'none', transition: 'transform 0.2s' }} onMouseEnter={(e) => (e.target as any).style.transform = 'scale(1.05)'} onMouseLeave={(e) => (e.target as any).style.transform = 'scale(1)'}>
+            Ücretsiz Başla
           </button>
         </div>
       </nav>
@@ -105,7 +136,7 @@ export default function LandingPage() {
       {/* Hero Section */}
       <section style={{ position: 'relative', zIndex: 1, padding: '160px 20px 100px', textAlign: 'center', maxWidth: '1000px', margin: '0 auto', display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
         <div style={{ display: 'inline-flex', alignItems: 'center', gap: '8px', padding: '6px 16px', borderRadius: '30px', background: 'rgba(99,102,241,0.1)', border: '1px solid rgba(99,102,241,0.2)', color: '#818cf8', fontSize: '13px', fontWeight: '600', marginBottom: '24px' }}>
-          <Sparkles size={14} /> Claude 4.6 Sonnet AI Entegre Edildi
+          <Sparkles size={14} /> İlk 5 Gün Tamamen Ücretsiz! Kredi Kartı Gerekmez.
         </div>
         
         <h1 style={{ fontSize: '72px', fontWeight: '800', fontFamily: "'Space Grotesk', sans-serif", lineHeight: 1.1, letterSpacing: '-0.03em', marginBottom: '24px' }}>
@@ -120,8 +151,8 @@ export default function LandingPage() {
         </p>
         
         <div style={{ display: 'flex', gap: '16px' }}>
-          <button onClick={scrollToLogin} style={{ padding: '16px 32px', borderRadius: '12px', background: 'linear-gradient(135deg, #6366f1, #8b5cf6)', color: '#fff', fontSize: '16px', fontWeight: '600', border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '8px', boxShadow: '0 10px 30px rgba(99,102,241,0.4)', transition: 'transform 0.2s' }} onMouseEnter={(e) => (e.currentTarget as any).style.transform = 'translateY(-2px)'} onMouseLeave={(e) => (e.currentTarget as any).style.transform = 'translateY(0)'}>
-            Hemen Başlayın <ChevronRight size={18} />
+          <button onClick={scrollToRegister} style={{ padding: '16px 32px', borderRadius: '12px', background: 'linear-gradient(135deg, #6366f1, #8b5cf6)', color: '#fff', fontSize: '16px', fontWeight: '600', border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '8px', boxShadow: '0 10px 30px rgba(99,102,241,0.4)', transition: 'transform 0.2s' }} onMouseEnter={(e) => (e.currentTarget as any).style.transform = 'translateY(-2px)'} onMouseLeave={(e) => (e.currentTarget as any).style.transform = 'translateY(0)'}>
+            5 Gün Ücretsiz Dene <ChevronRight size={18} />
           </button>
           <a href="#features" style={{ padding: '16px 32px', borderRadius: '12px', background: 'rgba(255,255,255,0.05)', color: '#fff', fontSize: '16px', fontWeight: '600', border: '1px solid rgba(255,255,255,0.1)', cursor: 'pointer', display: 'flex', alignItems: 'center', textDecoration: 'none', transition: 'background 0.2s' }} onMouseEnter={(e) => (e.currentTarget as any).style.background = 'rgba(255,255,255,0.1)'} onMouseLeave={(e) => (e.currentTarget as any).style.background = 'rgba(255,255,255,0.05)'}>
             Özellikleri İncele
@@ -162,14 +193,14 @@ export default function LandingPage() {
           
           {/* Left Side: Information */}
           <div style={{ flex: 1, padding: '48px', background: 'linear-gradient(135deg, rgba(99,102,241,0.1), transparent)', borderRight: '1px solid rgba(255,255,255,0.05)', display: 'flex', flexDirection: 'column' }}>
-            <h2 style={{ fontSize: '28px', fontWeight: '800', fontFamily: "'Space Grotesk', sans-serif", marginBottom: '16px' }}>Hemen Giriş Yapın</h2>
+            <h2 style={{ fontSize: '28px', fontWeight: '800', fontFamily: "'Space Grotesk', sans-serif", marginBottom: '16px' }}>Demoyu Test Edin</h2>
             <p style={{ fontSize: '15px', color: '#a1a1aa', marginBottom: '32px' }}>Aşağıdaki örnek sektörlerden birine tıklayarak platformun gücünü canlı olarak test edebilirsiniz.</p>
             
             <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', flex: 1 }}>
               {DEMO_ACCOUNTS.map((d) => (
                 <button
                   key={d.email}
-                  onClick={() => handleLogin(d.email)}
+                  onClick={() => handleAuth(d.email)}
                   disabled={loading}
                   style={{
                     display: 'flex', alignItems: 'center', gap: '16px',
@@ -193,11 +224,46 @@ export default function LandingPage() {
             </div>
           </div>
 
-          {/* Right Side: Manual Login */}
-          <div style={{ width: '400px', padding: '48px', display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
-            <h3 style={{ fontSize: '20px', fontWeight: '700', marginBottom: '24px' }}>Kendi Hesabınız</h3>
+          {/* Right Side: Manual Login/Register */}
+          <div style={{ width: '420px', padding: '48px', display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
+            <div style={{ display: 'flex', gap: '16px', marginBottom: '24px' }}>
+              <button onClick={() => setIsRegister(false)} style={{ flex: 1, padding: '10px', background: !isRegister ? 'rgba(255,255,255,0.1)' : 'transparent', border: 'none', borderRadius: '8px', color: '#fff', fontWeight: '600', cursor: 'pointer', transition: 'background 0.2s' }}>Giriş Yap</button>
+              <button onClick={() => setIsRegister(true)} style={{ flex: 1, padding: '10px', background: isRegister ? 'rgba(99,102,241,0.2)' : 'transparent', color: isRegister ? '#818cf8' : '#a1a1aa', border: 'none', borderRadius: '8px', fontWeight: '600', cursor: 'pointer', transition: 'background 0.2s' }}>Kayıt Ol</button>
+            </div>
             
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+              
+              {isRegister && (
+                <>
+                  <div>
+                    <label style={{ display: 'block', fontSize: '13px', fontWeight: '600', color: '#a1a1aa', marginBottom: '8px' }}>İşletme Adı</label>
+                    <input
+                      className="input"
+                      type="text"
+                      placeholder="Firma adınız..."
+                      value={companyName}
+                      onChange={(e) => setCompanyName(e.target.value)}
+                      style={{ width: '100%', padding: '12px', borderRadius: '12px', background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)', color: '#fff', outline: 'none' }}
+                    />
+                  </div>
+                  <div>
+                    <label style={{ display: 'block', fontSize: '13px', fontWeight: '600', color: '#a1a1aa', marginBottom: '8px' }}>Sektörünüz</label>
+                    <select
+                      value={sector}
+                      onChange={(e) => setSector(e.target.value)}
+                      style={{ width: '100%', padding: '12px', borderRadius: '12px', background: '#111', border: '1px solid rgba(255,255,255,0.1)', color: '#fff', outline: 'none', WebkitAppearance: 'none' }}
+                    >
+                      <option value="other">Seçiniz...</option>
+                      <option value="tailor">Terzi</option>
+                      <option value="furniture">Mobilya</option>
+                      <option value="dental">Klinik</option>
+                      <option value="printing">Matbaa</option>
+                      <option value="autoservice">Oto Servis</option>
+                    </select>
+                  </div>
+                </>
+              )}
+
               <div>
                 <label style={{ display: 'block', fontSize: '13px', fontWeight: '600', color: '#a1a1aa', marginBottom: '8px' }}>E-posta Adresi</label>
                 <input
@@ -206,8 +272,8 @@ export default function LandingPage() {
                   placeholder="ornek@firma.com"
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
-                  onKeyDown={(e) => e.key === 'Enter' && handleLogin()}
-                  style={{ width: '100%', padding: '14px', borderRadius: '12px', background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)', color: '#fff', outline: 'none' }}
+                  onKeyDown={(e) => e.key === 'Enter' && handleAuth()}
+                  style={{ width: '100%', padding: '12px', borderRadius: '12px', background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)', color: '#fff', outline: 'none' }}
                 />
               </div>
               <div>
@@ -219,8 +285,8 @@ export default function LandingPage() {
                     placeholder="••••••••"
                     value={password}
                     onChange={(e) => setPassword(e.target.value)}
-                    onKeyDown={(e) => e.key === 'Enter' && handleLogin()}
-                    style={{ width: '100%', padding: '14px', borderRadius: '12px', background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)', color: '#fff', outline: 'none' }}
+                    onKeyDown={(e) => e.key === 'Enter' && handleAuth()}
+                    style={{ width: '100%', padding: '12px', borderRadius: '12px', background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)', color: '#fff', outline: 'none' }}
                   />
                   <button
                     onClick={() => setShowPass(!showPass)}
@@ -238,15 +304,15 @@ export default function LandingPage() {
               )}
 
               <button
-                onClick={() => handleLogin()}
+                onClick={() => handleAuth()}
                 disabled={loading}
-                style={{ width: '100%', padding: '14px', borderRadius: '12px', background: '#fff', color: '#000', fontSize: '15px', fontWeight: '700', border: 'none', cursor: 'pointer', marginTop: '8px', transition: 'background 0.2s', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
-                onMouseEnter={(e) => (e.currentTarget as any).style.background = '#f4f4f5'}
-                onMouseLeave={(e) => (e.currentTarget as any).style.background = '#fff'}
+                style={{ width: '100%', padding: '14px', borderRadius: '12px', background: isRegister ? 'linear-gradient(135deg, #6366f1, #8b5cf6)' : '#fff', color: isRegister ? '#fff' : '#000', fontSize: '15px', fontWeight: '700', border: 'none', cursor: 'pointer', marginTop: '8px', transition: 'transform 0.2s', display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: isRegister ? '0 8px 24px rgba(99,102,241,0.3)' : 'none' }}
+                onMouseEnter={(e) => (e.currentTarget as any).style.transform = 'translateY(-2px)'}
+                onMouseLeave={(e) => (e.currentTarget as any).style.transform = 'translateY(0)'}
               >
                 {loading ? (
-                  <div style={{ width: '20px', height: '20px', border: '2px solid rgba(0,0,0,0.2)', borderTop: '2px solid #000', borderRadius: '50%', animation: 'spin 0.8s linear infinite' }} />
-                ) : 'Giriş Yap'}
+                  <div style={{ width: '20px', height: '20px', border: '2px solid rgba(0,0,0,0.2)', borderTop: '2px solid transparent', borderRadius: '50%', animation: 'spin 0.8s linear infinite' }} />
+                ) : isRegister ? '5 Gün Ücretsiz Başla' : 'Giriş Yap'}
               </button>
             </div>
           </div>
