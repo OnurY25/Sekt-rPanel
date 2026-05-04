@@ -3,6 +3,18 @@
 import { createClient } from '@/lib/supabase/server';
 import { MOCK_TENANTS } from '@/lib/mockData';
 
+function translateAuthError(msg: string): string {
+  if (!msg) return 'Bilinmeyen bir hata oluştu.';
+  if (msg.includes('already registered')) return 'Bu e-posta adresi zaten sistemimizde kayıtlı.';
+  if (msg.includes('Password should be at least')) return 'Şifreniz en az 6 karakter olmalıdır.';
+  if (msg.includes('rate limit')) return 'Çok fazla deneme yaptınız, lütfen biraz bekleyin.';
+  if (msg.includes('Unable to validate email address') || msg.includes('invalid format')) return 'Lütfen geçerli bir e-posta adresi giriniz (örnek: info@firma.com).';
+  if (msg.includes('Email not confirmed')) return 'Lütfen e-posta adresinizi doğrulayın. (Eğer test ortamındaysanız Supabase panelinden "Confirm Email" ayarını kapatın)';
+  if (msg.includes('Invalid login credentials')) return 'E-posta veya şifre hatalı.';
+  if (msg.includes('Confirm Email')) return 'Kayıt başarılı! Ancak sisteme girmek için Supabase üzerinden "Confirm Email" ayarını kapatmanız gerekmektedir.';
+  return msg;
+}
+
 export async function loginAction(email: string, password?: string) {
   const sanitizedEmail = email.trim().toLowerCase();
   const pass = password || 'Demo1234!'; // Default password for demo accounts
@@ -44,17 +56,14 @@ export async function loginAction(email: string, password?: string) {
       });
       
       if (signUpError) {
-        return { error: signUpError.message };
+        return { error: translateAuthError(signUpError.message) };
       }
       data = signUpData as any;
     } else {
-      return { error: 'E-posta veya şifre hatalı.' };
+      return { error: translateAuthError('Invalid login credentials') };
     }
   } else if (error) {
-    let msg = error.message;
-    if (msg.includes('Email not confirmed')) msg = 'Lütfen e-posta adresinizi doğrulayın. (Eğer test ortamındaysanız Supabase panelinden "Confirm Email" ayarını kapatın)';
-    if (msg.includes('Unable to validate email address') || msg.includes('invalid format')) msg = 'Lütfen geçerli bir e-posta adresi giriniz (örnek: info@firma.com).';
-    return { error: msg };
+    return { error: translateAuthError(error.message) };
   }
 
   // At this point we are authenticated. We need to check if the tenant exists.
@@ -126,15 +135,10 @@ export async function registerAction(email: string, password: string, company_na
   });
 
   if (error) {
-    let msg = error.message;
-    if (msg.includes('already registered')) msg = 'Bu e-posta adresi zaten sistemimizde kayıtlı.';
-    if (msg.includes('Password should be at least')) msg = 'Şifreniz en az 6 karakter olmalıdır.';
-    if (msg.includes('rate limit')) msg = 'Çok fazla kayıt denemesi yaptınız, lütfen birkaç dakika bekleyin.';
-    if (msg.includes('Unable to validate email address') || msg.includes('invalid format')) msg = 'Lütfen geçerli bir e-posta adresi giriniz (örnek: info@firma.com).';
-    return { error: msg };
+    return { error: translateAuthError(error.message) };
   }
 
-  // Auto-confirm logic
+// Auto-confirm logic
   if (data.user && !data.session) {
     if (serviceRoleKey && process.env.NEXT_PUBLIC_SUPABASE_URL) {
       const { createClient: createSupabaseClient } = await import('@supabase/supabase-js');
@@ -154,7 +158,7 @@ export async function registerAction(email: string, password: string, company_na
         console.error("Auto confirm error:", confirmError);
       }
     } else {
-      return { error: 'Kayıt başarılı! Ancak sisteme girmek için Supabase üzerinden "Confirm Email" ayarını kapatmanız gerekmektedir.' };
+      return { error: translateAuthError('Confirm Email') };
     }
   }
 
