@@ -98,8 +98,29 @@ export async function registerAction(email: string, password: string, company_na
     return { error: msg };
   }
 
-  if (!data.session) {
-    return { error: 'Kayıt başarılı! Ancak sisteme girmek için Supabase üzerinden "Confirm Email" (E-posta Doğrulama) ayarını kapatmanız veya mailinize gelen linki onaylamanız gerekmektedir.' };
+  // Auto-confirm logic
+  if (data.user && !data.session) {
+    const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+    if (serviceRoleKey && process.env.NEXT_PUBLIC_SUPABASE_URL) {
+      const { createClient: createSupabaseClient } = await import('@supabase/supabase-js');
+      const adminClient = createSupabaseClient(
+        process.env.NEXT_PUBLIC_SUPABASE_URL,
+        serviceRoleKey,
+        { auth: { autoRefreshToken: false, persistSession: false } }
+      );
+      
+      // Forcibly confirm the user's email
+      const { error: confirmError } = await adminClient.auth.admin.updateUserById(
+        data.user.id,
+        { email_confirm: true }
+      );
+      
+      if (confirmError) {
+        console.error("Auto confirm error:", confirmError);
+      }
+    } else {
+      return { error: 'Kayıt başarılı! Ancak sisteme girmek için Supabase üzerinden "Confirm Email" ayarını kapatmanız gerekmektedir.' };
+    }
   }
 
   return { success: true, user: data.user };

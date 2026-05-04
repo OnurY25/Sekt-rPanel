@@ -54,6 +54,18 @@ export default function LandingPage() {
         const { registerAction } = await import('@/app/actions/auth');
         const res = await registerAction(e, password, companyName, sector);
         if (res.error) {
+          if (res.error.includes('zaten sistemimizde kayıtlı')) {
+             const loginRes = await loginAction(e, password);
+             if (loginRes.success && loginRes.user && loginRes.profile) {
+               setAuth(loginRes.user, loginRes.profile.tenants, 'mock-token');
+               localStorage.setItem('saas_user', JSON.stringify(loginRes.user));
+               localStorage.setItem('saas_tenant', JSON.stringify(loginRes.profile.tenants));
+               localStorage.setItem('saas_token', 'mock-token');
+               addNotification({ title: 'Hoş Geldiniz', message: 'Hesabınız zaten vardı, giriş yapıldı.', type: 'success' });
+               router.push('/dashboard');
+               return;
+             }
+          }
           setError(res.error);
           setLoading(false);
           return;
