@@ -40,6 +40,7 @@ export default function LandingPage() {
     setError('');
 
     try {
+      // ── REGISTER FLOW ──────────────────────────────────────────────
       if (isRegister && !loginEmail) {
         if (!companyName) {
           setError('Lütfen işletme adınızı girin.');
@@ -51,28 +52,70 @@ export default function LandingPage() {
           setLoading(false);
           return;
         }
+
         const { registerAction } = await import('@/app/actions/auth');
         const res = await registerAction(e, password, companyName, sector);
+
         if (res.error) {
+          // If already registered, try logging in directly
           if (res.error.includes('zaten sistemimizde kayıtlı')) {
-             const loginRes = await loginAction(e, password);
-             if (loginRes.success && loginRes.user && loginRes.profile) {
-               setAuth(loginRes.user, loginRes.profile.tenants, 'mock-token');
-               localStorage.setItem('saas_user', JSON.stringify(loginRes.user));
-               localStorage.setItem('saas_tenant', JSON.stringify(loginRes.profile.tenants));
-               localStorage.setItem('saas_token', 'mock-token');
-               addNotification({ title: 'Hoş Geldiniz', message: 'Hesabınız zaten vardı, giriş yapıldı.', type: 'success' });
-               router.push('/dashboard');
-               return;
-             }
+            const loginRes = await loginAction(e, password);
+            if (loginRes.success && loginRes.user) {
+              const existingTenant: Tenant = {
+                id: loginRes.profile?.tenant_id || 'existing-tenant',
+                company_name: loginRes.profile?.name || companyName,
+                sector: sector as any,
+                plan: 'trial' as any,
+                status: 'active',
+                created_at: new Date().toISOString(),
+                currency: 'TRY',
+                language: 'tr',
+              };
+              const existingUser: User = {
+                id: loginRes.user.id,
+                tenant_id: existingTenant.id,
+                name: loginRes.profile?.name || companyName + ' Yöneticisi',
+                email: e,
+                role: 'owner',
+                created_at: new Date().toISOString(),
+              };
+              setAuth(existingUser, existingTenant, 'supabase-secure-session');
+              router.push('/dashboard');
+              return;
+            }
           }
           setError(res.error);
           setLoading(false);
           return;
         }
-        // Auto-login after successful registration is handled by Supabase session internally, but we can call loginAction to get the profile and route.
+
+        // Registration successful — build user/tenant from registration data directly
+        if (res.success && res.user) {
+          const newTenant: Tenant = {
+            id: res.user.id + '-tenant',
+            company_name: companyName,
+            sector: sector as any,
+            plan: 'trial' as any,
+            status: 'active',
+            created_at: new Date().toISOString(),
+            currency: 'TRY',
+            language: 'tr',
+          };
+          const newUser: User = {
+            id: res.user.id,
+            tenant_id: newTenant.id,
+            name: companyName + ' Yöneticisi',
+            email: e,
+            role: 'owner',
+            created_at: new Date().toISOString(),
+          };
+          setAuth(newUser, newTenant, 'supabase-secure-session');
+          router.push('/dashboard');
+          return;
+        }
       }
 
+      // ── LOGIN FLOW ─────────────────────────────────────────────────
       const result = await loginAction(e, password || 'Demo1234!');
       
       if (result.error) {
@@ -81,11 +124,11 @@ export default function LandingPage() {
         return;
       }
 
-      const tenantData = MOCK_TENANTS[e] || { id: 'new-tenant', company: companyName, sector, plan: 'trial' };
+      const tenantData = MOCK_TENANTS[e] || { id: 'new-tenant', company: companyName || 'İşletme', sector: sector || 'other', plan: 'trial' };
       
       const user: User = {
         id: result.user?.id || 'u1',
-        tenant_id: tenantData.id,
+        tenant_id: result.profile?.tenant_id || tenantData.id,
         name: result.profile?.name || tenantData.company + ' Yöneticisi',
         email: e,
         role: 'owner',
@@ -93,10 +136,10 @@ export default function LandingPage() {
       };
 
       const tenant: Tenant = {
-        id: tenantData.id,
-        company_name: tenantData.company,
-        sector: tenantData.sector as any,
-        plan: tenantData.plan as any,
+        id: result.profile?.tenants?.id || tenantData.id,
+        company_name: result.profile?.tenants?.company_name || tenantData.company,
+        sector: (result.profile?.tenants?.sector || tenantData.sector) as any,
+        plan: (result.profile?.tenants?.plan || tenantData.plan) as any,
         status: 'active',
         created_at: new Date().toISOString(),
         currency: 'TRY',
@@ -106,7 +149,8 @@ export default function LandingPage() {
       setAuth(user, tenant, 'supabase-secure-session');
       router.push('/dashboard');
     } catch (err: any) {
-      setError(err.message || 'Bir hata oluştu.');
+      console.error('Auth error:', err);
+      setError(err.message || 'Beklenmeyen bir hata oluştu. Lütfen tekrar deneyin.');
       setLoading(false);
     }
   };
