@@ -4,16 +4,17 @@ import { createClient } from '@/lib/supabase/server';
 import { MOCK_TENANTS } from '@/lib/mockData';
 
 export async function loginAction(email: string, password?: string) {
+  const sanitizedEmail = email.trim().toLowerCase();
   const pass = password || 'Demo1234!'; // Default password for demo accounts
 
   // If Supabase is not configured yet, allow demo mock login
   if (!process.env.NEXT_PUBLIC_SUPABASE_URL || !process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY) {
-    const isDemo = Object.keys(MOCK_TENANTS).includes(email) || email === 'admin@demo.com';
+    const isDemo = Object.keys(MOCK_TENANTS).includes(sanitizedEmail) || sanitizedEmail === 'admin@demo.com';
     if (isDemo) {
       return { 
         success: true, 
-        user: { id: 'mock-user-1', email },
-        profile: { name: MOCK_TENANTS[email]?.company + ' Admin' || 'Admin' } 
+        user: { id: 'mock-user-1', email: sanitizedEmail },
+        profile: { name: MOCK_TENANTS[sanitizedEmail]?.company + ' Admin' || 'Admin' } 
       };
     }
     return { error: 'Supabase yapılandırılmamış ve geçersiz demo hesabı girdiniz.' };
@@ -23,7 +24,7 @@ export async function loginAction(email: string, password?: string) {
 
   // Attempt login
   let { data, error } = await supabase.auth.signInWithPassword({
-    email,
+    email: sanitizedEmail,
     password: pass,
   });
 
@@ -76,6 +77,12 @@ export async function logoutAction() {
 }
 
 export async function registerAction(email: string, password: string, company_name: string, sector: string) {
+  const sanitizedEmail = email.trim().toLowerCase();
+  
+  if (!sanitizedEmail || !sanitizedEmail.includes('@')) {
+    return { error: 'Geçersiz bir e-posta adresi girdiniz.' };
+  }
+
   const { headers } = await import('next/headers');
   const headersList = await headers();
   const ip = headersList.get('x-forwarded-for')?.split(',')[0] || 'unknown';
@@ -105,7 +112,7 @@ export async function registerAction(email: string, password: string, company_na
   }
 
   const { data, error } = await supabase.auth.signUp({
-    email,
+    email: sanitizedEmail,
     password,
     options: {
       data: {
