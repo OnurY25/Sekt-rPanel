@@ -1,10 +1,10 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useStore } from '@/lib/store';
-import { generateMockTasks } from '@/lib/mockData';
+import { createClient } from '@/lib/supabase/client';
 import { Task, TaskStatus } from '@/types';
-import { Plus, X, CheckSquare, Circle, AlertCircle, Clock, User } from 'lucide-react';
+import { Plus, X, CheckSquare, Circle, AlertCircle, Clock, User, Loader2 } from 'lucide-react';
 
 const STATUS_COLUMNS: { key: TaskStatus; label: string; color: string }[] = [
   { key: 'todo', label: 'Yapılacak', color: '#f59e0b' },
@@ -19,28 +19,81 @@ const PRIORITY_CONFIG = {
 };
 
 export default function TasksPage() {
-  const { tenant, addNotification, tasks, addTask, updateTask } = useStore();
+  const { tenant, addNotification } = useStore();
+  const supabase = createClient();
+  
+  const [tasks, setTasks] = useState<Task[]>([]);
+  const [loading, setLoading] = useState(true);
   const [showModal, setShowModal] = useState(false);
   const [form, setForm] = useState({ title: '', assigned_to: '', status: 'todo' as TaskStatus, priority: 'medium' as 'high' | 'medium' | 'low', due_date: '' });
   const [view, setView] = useState<'kanban' | 'list'>('kanban');
+  const [saving, setSaving] = useState(false);
 
-  const handleSave = () => {
-    if (!form.title) return;
-    const t: Task = { id: `t${Date.now()}`, tenant_id: tenant?.id || 't1', ...form };
-    addTask(t);
-    addNotification({ title: 'Görev Eklendi', message: `"${form.title}" görevi oluşturuldu.`, type: 'success' });
-    setShowModal(false);
-    setForm({ title: '', assigned_to: '', status: 'todo', priority: 'medium', due_date: '' });
+  useEffect(() => {
+    if (tenant?.id) {
+      fetchTasks();
+    }
+  }, [tenant?.id]);
+
+  const fetchTasks = async () => {
+    setLoading(true);
+    const { data, error } = await supabase.from('tasks').select('*').order('created_at', { ascending: false });
+    if (data) setTasks(data as Task[]);
+    setLoading(false);
   };
 
-  const moveTask = (id: string, status: TaskStatus) => {
-    updateTask(id, { status });
+  const handleSave = async () => {
+    if (!form.title || !tenant?.id) return;
+    setSaving(true);
+
+    const taskData = {
+      tenant_id: tenant.id,
+      title: form.title,
+      assigned_to: form.assigned_to,
+      status: form.status,
+      priority: form.priority,
+      due_date: form.due_date || null
+    };
+
+    const { data: newTask, error } = await supabase.from('tasks').insert([taskData]).select().single();
+
+    if (!error && newTask) {
+      setTasks(prev => [newTask as Task, ...prev]);
+      addNotification({ title: 'Görev Eklendi', message: `"${form.title}" görevi oluşturuldu.`, type: 'success' });
+      setShowModal(false);
+      setForm({ title: '', assigned_to: '', status: 'todo', priority: 'medium', due_date: '' });
+    }
+    setSaving(false);
   };
+
+  const moveTask = async (id: string, status: TaskStatus) => {
+    const { error } = await supabase.from('tasks').update({ status }).eq('id', id);
+    if (!error) {
+      setTasks(prev => prev.map(t => t.id === id ? { ...t, status } : t));
+    }
+  };
+
+  const deleteTask = async (id: string) => {
+    const { error } = await supabase.from('tasks').delete().eq('id', id);
+    if (!error) {
+      setTasks(prev => prev.filter(t => t.id !== id));
+      addNotification({ title: 'Görev Silindi', message: 'Görev başarıyla kaldırıldı.', type: 'info' });
+    }
+  };
+
+  if (loading) {
+    return (
+      <div style={{ height: '60vh', display: 'flex', alignItems: 'center', justifyContent: 'center', flexDirection: 'column', gap: '12px' }}>
+        <Loader2 className="animate-spin" size={32} color="#6366f1" />
+        <p style={{ color: 'var(--text-muted)', fontSize: '14px' }}>Görevler yükleniyor...</p>
+      </div>
+    );
+  }
 
   const TaskCard = ({ task }: { task: Task }) => {
     const priority = PRIORITY_CONFIG[task.priority || 'medium'];
     return (
-      <div className="card" style={{ padding: '14px', cursor: 'grab', transition: 'all 0.2s' }}>
+      <div className="card" style={{ padding: '14px', transition: 'all 0.2s' }}>
         <div style={{ display: 'flex', alignItems: 'flex-start', gap: '10px', marginBottom: '8px' }}>
           <button
             onClick={() => moveTask(task.id, task.status === 'done' ? 'todo' : 'done')}
@@ -53,6 +106,9 @@ export default function TasksPage() {
               {task.title}
             </div>
           </div>
+          <button onClick={() => deleteTask(task.id)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)', opacity: 0.5 }}>
+            <X size={12} />
+          </button>
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: '8px', paddingLeft: '26px' }}>
           <span style={{ fontSize: '11px', fontWeight: '600', color: priority.color, background: `${priority.color}15`, padding: '2px 6px', borderRadius: '4px' }}>
@@ -60,7 +116,7 @@ export default function TasksPage() {
           </span>
           {task.due_date && (
             <div style={{ display: 'flex', alignItems: 'center', gap: '3px', fontSize: '11px', color: 'var(--text-muted)' }}>
-              <Clock size={10} /> {task.due_date}
+              <Clock size={10} /> {new Date(task.due_date).toLocaleDateString('tr-TR')}
             </div>
           )}
           {task.assigned_to && (
@@ -69,9 +125,9 @@ export default function TasksPage() {
             </div>
           )}
         </div>
-        <div style={{ paddingLeft: '26px', marginTop: '8px', display: 'flex', gap: '4px' }}>
+        <div style={{ paddingLeft: '26px', marginTop: '12px', display: 'flex', gap: '4px' }}>
           {STATUS_COLUMNS.filter((c) => c.key !== task.status).map((col) => (
-            <button key={col.key} onClick={() => moveTask(task.id, col.key)} className="btn btn-secondary btn-sm" style={{ fontSize: '10px', padding: '2px 8px' }}>
+            <button key={col.key} onClick={() => moveTask(task.id, col.key)} className="btn btn-secondary btn-sm" style={{ fontSize: '10px', padding: '2px 8px', borderRadius: '6px' }}>
               → {col.label}
             </button>
           ))}
@@ -166,7 +222,7 @@ export default function TasksPage() {
                       <td style={{ fontWeight: '500' }}>{task.title}</td>
                       <td><span style={{ fontSize: '12px', fontWeight: '600', color: priority.color }}>{priority.label}</span></td>
                       <td style={{ fontSize: '13px', color: 'var(--text-secondary)' }}>{task.assigned_to || '—'}</td>
-                      <td style={{ fontSize: '13px', color: 'var(--text-secondary)' }}>{task.due_date || '—'}</td>
+                      <td style={{ fontSize: '13px', color: 'var(--text-secondary)' }}>{task.due_date ? new Date(task.due_date).toLocaleDateString('tr-TR') : '—'}</td>
                       <td>
                         <select
                           value={task.status}
@@ -178,14 +234,7 @@ export default function TasksPage() {
                       </td>
                       <td>
                         <button
-                          onClick={() => {
-                            // To actually delete from the store, we need a deleteTask action, but since it's mock
-                            // and the store doesn't have deleteTask yet, we'll just mark it as 'done' or similar 
-                            // as a fallback. Or we could add `deleteTask` to `store.ts`.
-                            // For MVP, marking as done is often better than hard delete.
-                            updateTask(task.id, { status: 'done' });
-                            addNotification({ title: 'Görev Tamamlandı', message: 'Görev listeden kaldırıldı.', type: 'info' });
-                          }}
+                          onClick={() => deleteTask(task.id)}
                           className="btn btn-danger btn-sm btn-icon"
                         >
                           <X size={13} />
@@ -239,8 +288,10 @@ export default function TasksPage() {
               </div>
             </div>
             <div style={{ padding: '16px 24px', borderTop: '1px solid var(--border)', display: 'flex', gap: '10px', justifyContent: 'flex-end' }}>
-              <button className="btn btn-secondary" onClick={() => setShowModal(false)}>İptal</button>
-              <button className="btn btn-primary" onClick={handleSave}>Kaydet</button>
+              <button className="btn btn-secondary" onClick={() => setShowModal(false)} disabled={saving}>İptal</button>
+              <button className="btn btn-primary" onClick={handleSave} disabled={saving}>
+                {saving ? <Loader2 className="animate-spin" size={16} /> : 'Kaydet'}
+              </button>
             </div>
           </div>
         </div>

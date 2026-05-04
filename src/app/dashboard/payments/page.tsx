@@ -1,10 +1,10 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useStore } from '@/lib/store';
-import { generateMockPayments, generateMockCustomers } from '@/lib/mockData';
-import { Payment, PaymentType, Customer } from '@/types';
-import { CreditCard, Plus, X, TrendingUp, Banknote, Smartphone, Building2 } from 'lucide-react';
+import { createClient } from '@/lib/supabase/client';
+import { Payment, PaymentType, Customer, Order } from '@/types';
+import { CreditCard, Plus, X, TrendingUp, Banknote, Smartphone, Building2, Loader2 } from 'lucide-react';
 
 const formatCurrency = (n: number) =>
   new Intl.NumberFormat('tr-TR', { style: 'currency', currency: 'TRY', minimumFractionDigits: 0 }).format(n);
@@ -31,38 +31,91 @@ const PAYMENT_COLORS: Record<PaymentType, string> = {
 };
 
 export default function PaymentsPage() {
-  const { tenant, addNotification, payments, customers, orders, addPayment } = useStore();
+  const { tenant, addNotification } = useStore();
+  const supabase = createClient();
+  
+  const [payments, setPayments] = useState<Payment[]>([]);
+  const [customers, setCustomers] = useState<Customer[]>([]);
+  const [orders, setOrders] = useState<Order[]>([]);
+  const [loading, setLoading] = useState(true);
   const [showModal, setShowModal] = useState(false);
   const [form, setForm] = useState({ customer_id: '', order_id: '', amount: '', type: 'cash' as PaymentType, notes: '' });
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    if (tenant?.id) {
+      fetchData();
+    }
+  }, [tenant?.id]);
+
+  const fetchData = async () => {
+    setLoading(true);
+    const [paymentsRes, customersRes, ordersRes] = await Promise.all([
+      supabase.from('payments').select('*, customer:customers(id, name), order:orders(id, title)').order('paid_at', { ascending: false }),
+      supabase.from('customers').select('id, name').order('name'),
+      supabase.from('orders').select('id, customer_id, title, remaining_balance').neq('status', 'cancelled')
+    ]);
+
+    if (paymentsRes.data) setPayments(paymentsRes.data as any);
+    if (customersRes.data) setCustomers(customersRes.data as any);
+    if (ordersRes.data) setOrders(ordersRes.data as any);
+    setLoading(false);
+  };
 
   if (!tenant) return null;
 
   const totalRevenue = payments.reduce((s, p) => s + p.amount, 0);
   const byType = (type: PaymentType) => payments.filter((p) => p.type === type).reduce((s, p) => s + p.amount, 0);
 
-  const handleSave = () => {
-    if (!form.customer_id || !form.amount) return;
-    const customer = customers.find(c => c.id === form.customer_id);
-    const order = orders.find(o => o.id === form.order_id);
+  const handleSave = async () => {
+    if (!form.customer_id || !form.amount || !tenant?.id) return;
+    setSaving(true);
     
-    const newPayment: Payment = {
-      id: `p${Date.now()}`,
+    const paymentData = {
       tenant_id: tenant.id,
       customer_id: form.customer_id,
-      customer: customer ? { id: customer.id, name: customer.name } : undefined,
-      order_id: form.order_id || undefined,
-      order: order ? { id: order.id, title: order.title } : undefined,
+      order_id: form.order_id || null,
       amount: Number(form.amount),
       type: form.type,
-      paid_at: new Date().toISOString(),
       notes: form.notes,
+      paid_at: new Date().toISOString()
     };
     
-    addPayment(newPayment);
-    addNotification({ title: 'Ödeme Kaydedildi', message: `${formatCurrency(newPayment.amount)} ödeme alındı.`, type: 'success' });
-    setShowModal(false);
-    setForm({ customer_id: '', order_id: '', amount: '', type: 'cash', notes: '' });
+    const { data: newPayment, error } = await supabase
+      .from('payments')
+      .insert([paymentData])
+      .select('*, customer:customers(id, name), order:orders(id, title)')
+      .single();
+
+    if (!error && newPayment) {
+      // If payment is linked to an order, update the order's balance
+      if (form.order_id) {
+        const order = orders.find(o => o.id === form.order_id);
+        if (order) {
+          const newBalance = Math.max(0, (order.remaining_balance || 0) - Number(form.amount));
+          await supabase.from('orders').update({ remaining_balance: newBalance }).eq('id', order.id);
+          // Update local orders state too
+          setOrders(prev => prev.map(o => o.id === order.id ? { ...o, remaining_balance: newBalance } : o));
+        }
+      }
+
+      setPayments(prev => [newPayment as any, ...prev]);
+      addNotification({ title: 'Ödeme Kaydedildi', message: `${formatCurrency(Number(form.amount))} ödeme alındı.`, type: 'success' });
+      setShowModal(false);
+      setForm({ customer_id: '', order_id: '', amount: '', type: 'cash', notes: '' });
+    }
+
+    setSaving(false);
   };
+
+  if (loading) {
+    return (
+      <div style={{ height: '60vh', display: 'flex', alignItems: 'center', justifyContent: 'center', flexDirection: 'column', gap: '12px' }}>
+        <Loader2 className="animate-spin" size={32} color="#6366f1" />
+        <p style={{ color: 'var(--text-muted)', fontSize: '14px' }}>Finansal veriler yükleniyor...</p>
+      </div>
+    );
+  }
 
   return (
     <div>
@@ -125,7 +178,10 @@ export default function PaymentsPage() {
                         <div className="avatar" style={{ width: '32px', height: '32px', fontSize: '12px', borderRadius: '8px' }}>
                           {p.customer?.name?.charAt(0)}
                         </div>
-                        <span style={{ fontWeight: '500' }}>{p.customer?.name}</span>
+                        <div>
+                          <div style={{ fontWeight: '600' }}>{p.customer?.name}</div>
+                          {p.order && <div style={{ fontSize: '11px', color: 'var(--text-muted)' }}>{p.order.title}</div>}
+                        </div>
                       </div>
                     </td>
                     <td><span style={{ fontWeight: '800', fontSize: '15px', color: '#10b981', fontFamily: "'Space Grotesk', sans-serif" }}>{formatCurrency(p.amount)}</span></td>
@@ -146,6 +202,11 @@ export default function PaymentsPage() {
               })}
             </tbody>
           </table>
+          {payments.length === 0 && (
+            <div className="empty-state">
+              <p>Henüz ödeme kaydı bulunmuyor.</p>
+            </div>
+          )}
         </div>
       </div>
 
@@ -172,7 +233,7 @@ export default function PaymentsPage() {
                   <label className="input-label">İlgili Sipariş (Opsiyonel)</label>
                   <select className="input" value={form.order_id} onChange={(e) => setForm((p) => ({ ...p, order_id: e.target.value }))}>
                     <option value="">Bağımsız Ödeme</option>
-                    {orders.filter(o => o.customer_id === form.customer_id && o.remaining_balance && o.remaining_balance > 0).map(o => (
+                    {orders.filter(o => o.customer_id === form.customer_id && (o.remaining_balance || 0) > 0).map(o => (
                       <option key={o.id} value={o.id}>{o.title} (Kalan: {formatCurrency(o.remaining_balance!)})</option>
                     ))}
                   </select>
@@ -212,8 +273,10 @@ export default function PaymentsPage() {
               </div>
             </div>
             <div style={{ padding: '16px 24px', borderTop: '1px solid var(--border)', display: 'flex', gap: '10px', justifyContent: 'flex-end' }}>
-              <button className="btn btn-secondary" onClick={() => setShowModal(false)}>İptal</button>
-              <button className="btn btn-primary" onClick={handleSave}>Kaydet</button>
+              <button className="btn btn-secondary" onClick={() => setShowModal(false)} disabled={saving}>İptal</button>
+              <button className="btn btn-primary" onClick={handleSave} disabled={saving}>
+                {saving ? <Loader2 className="animate-spin" size={16} /> : 'Kaydet'}
+              </button>
             </div>
           </div>
         </div>

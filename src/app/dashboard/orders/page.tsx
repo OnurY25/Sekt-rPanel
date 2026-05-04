@@ -1,11 +1,11 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useStore } from '@/lib/store';
-import { generateMockOrders, generateMockCustomers } from '@/lib/mockData';
+import { createClient } from '@/lib/supabase/client';
 import { getSectorConfig, getStatusLabel, STATUS_COLORS } from '@/lib/sectors';
-import { Order, OrderStatus } from '@/types';
-import { Search, Plus, X, Filter, Calendar, CreditCard, ChevronDown } from 'lucide-react';
+import { Order, OrderStatus, Customer } from '@/types';
+import { Search, Plus, X, Filter, Calendar, CreditCard, ChevronDown, Loader2 } from 'lucide-react';
 
 const formatCurrency = (n: number) =>
   new Intl.NumberFormat('tr-TR', { style: 'currency', currency: 'TRY', minimumFractionDigits: 0 }).format(n);
@@ -13,17 +13,40 @@ const formatCurrency = (n: number) =>
 const ALL_STATUSES: OrderStatus[] = ['pending', 'in_progress', 'waiting_approval', 'ready', 'delivered', 'cancelled'];
 
 export default function OrdersPage() {
-  const { tenant, addNotification, orders, customers, addOrder, updateOrder } = useStore();
+  const { tenant, addNotification } = useStore();
+  const supabase = createClient();
+  
+  const [orders, setOrders] = useState<Order[]>([]);
+  const [customers, setCustomers] = useState<Customer[]>([]);
+  const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState<string>('all');
   const [showModal, setShowModal] = useState(false);
   const [editingOrder, setEditingOrder] = useState<Order | null>(null);
   const [form, setForm] = useState<any>({ customer_id: '', title: '', status: 'pending', price: '', deposit: '', due_date: '', notes: '' });
   const [dynamicFields, setDynamicFields] = useState<Record<string, string>>({});
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    if (tenant?.id) {
+      fetchData();
+    }
+  }, [tenant?.id]);
+
+  const fetchData = async () => {
+    setLoading(true);
+    const [ordersRes, customersRes] = await Promise.all([
+      supabase.from('orders').select('*, customer:customers(id, name)').order('created_at', { ascending: false }),
+      supabase.from('customers').select('id, name').order('name')
+    ]);
+
+    if (ordersRes.data) setOrders(ordersRes.data as any);
+    if (customersRes.data) setCustomers(customersRes.data as any);
+    setLoading(false);
+  };
 
   if (!tenant) return null;
   const config = getSectorConfig(tenant.sector);
-
   const orderLabel = tenant.sector === 'dental' ? 'Tedavi' : tenant.sector === 'autoservice' ? 'Servis İşi' : 'Sipariş';
 
   const filtered = orders.filter((o) => {
@@ -39,37 +62,68 @@ export default function OrdersPage() {
     setShowModal(true);
   };
 
-  const handleSave = () => {
-    if (!form.title || !form.customer_id) return;
-    const customer = customers.find((c) => c.id === form.customer_id);
+  const handleSave = async () => {
+    if (!form.title || !form.customer_id || !tenant?.id) return;
+    setSaving(true);
+
+    const orderData = {
+      tenant_id: tenant.id,
+      customer_id: form.customer_id,
+      title: form.title,
+      status: form.status,
+      price: Number(form.price) || 0,
+      deposit: Number(form.deposit) || 0,
+      remaining_balance: (Number(form.price) || 0) - (Number(form.deposit) || 0),
+      due_date: form.due_date,
+      notes: form.notes,
+      custom_data: dynamicFields
+    };
+
     if (editingOrder) {
-      updateOrder(editingOrder.id, { 
-        ...form, 
-        price: Number(form.price), 
-        deposit: Number(form.deposit), 
-        customer: customer ? { id: customer.id, name: customer.name } : undefined,
-        custom_data: dynamicFields
-      });
-      addNotification({ title: `${orderLabel} Güncellendi`, message: `"${form.title}" güncellendi.`, type: 'success' });
+      const { data, error } = await supabase
+        .from('orders')
+        .update(orderData)
+        .eq('id', editingOrder.id)
+        .select('*, customer:customers(id, name)')
+        .single();
+
+      if (!error && data) {
+        setOrders(prev => prev.map(o => o.id === editingOrder.id ? (data as any) : o));
+        addNotification({ title: `${orderLabel} Güncellendi`, message: `"${form.title}" güncellendi.`, type: 'success' });
+      }
     } else {
-      const newOrder: Order = {
-        id: `o${Date.now()}`, tenant_id: tenant?.id || 't_terzi',
-        ...form, price: Number(form.price), deposit: Number(form.deposit),
-        remaining_balance: Number(form.price) - Number(form.deposit),
-        customer: customer ? { id: customer.id, name: customer.name } : undefined, 
-        custom_data: dynamicFields,
-        created_at: new Date().toISOString(),
-      };
-      addOrder(newOrder);
-      addNotification({ title: `Yeni ${orderLabel}`, message: `"${form.title}" oluşturuldu.`, type: 'success' });
+      const { data, error } = await supabase
+        .from('orders')
+        .insert([orderData])
+        .select('*, customer:customers(id, name)')
+        .single();
+
+      if (!error && data) {
+        setOrders(prev => [data as any, ...prev]);
+        addNotification({ title: `Yeni ${orderLabel}`, message: `"${form.title}" oluşturuldu.`, type: 'success' });
+      }
     }
+
+    setSaving(false);
     setShowModal(false);
   };
 
-  const handleStatusChange = (id: string, newStatus: OrderStatus) => {
-    updateOrder(id, { status: newStatus });
-    addNotification({ title: 'Durum Güncellendi', message: `${orderLabel} durumu değiştirildi.`, type: 'info' });
+  const handleStatusChange = async (id: string, newStatus: OrderStatus) => {
+    const { error } = await supabase.from('orders').update({ status: newStatus }).eq('id', id);
+    if (!error) {
+      setOrders(prev => prev.map(o => o.id === id ? { ...o, status: newStatus } : o));
+      addNotification({ title: 'Durum Güncellendi', message: `${orderLabel} durumu değiştirildi.`, type: 'info' });
+    }
   };
+
+  if (loading) {
+    return (
+      <div style={{ height: '60vh', display: 'flex', alignItems: 'center', justifyContent: 'center', flexDirection: 'column', gap: '12px' }}>
+        <Loader2 className="animate-spin" size={32} color="#6366f1" />
+        <p style={{ color: 'var(--text-muted)', fontSize: '14px' }}>Veriler hazırlanıyor...</p>
+      </div>
+    );
+  }
 
   return (
     <div>
@@ -257,8 +311,10 @@ export default function OrdersPage() {
               </div>
             </div>
             <div style={{ padding: '16px 24px', borderTop: '1px solid var(--border)', display: 'flex', gap: '10px', justifyContent: 'flex-end' }}>
-              <button className="btn btn-secondary" onClick={() => setShowModal(false)}>İptal</button>
-              <button className="btn btn-primary" onClick={handleSave}>{editingOrder ? 'Güncelle' : 'Oluştur'}</button>
+              <button className="btn btn-secondary" onClick={() => setShowModal(false)} disabled={saving}>İptal</button>
+              <button className="btn btn-primary" onClick={handleSave} disabled={saving}>
+                {saving ? <Loader2 className="animate-spin" size={16} /> : (editingOrder ? 'Güncelle' : 'Oluştur')}
+              </button>
             </div>
           </div>
         </div>

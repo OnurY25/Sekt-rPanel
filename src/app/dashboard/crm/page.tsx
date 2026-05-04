@@ -1,49 +1,101 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useStore } from '@/lib/store';
-import { Workflow, Plus, X, ArrowRight, DollarSign, Phone, Mail, BarChart2 } from 'lucide-react';
+import { createClient } from '@/lib/supabase/client';
+import { Workflow, Plus, X, ArrowRight, DollarSign, Phone, Mail, BarChart2, Loader2 } from 'lucide-react';
+import { Customer } from '@/types';
 
 const STAGES = [
-  { id: 'lead', label: 'Potansiyel', color: '#8b9ab5', count: 8 },
-  { id: 'contacted', label: 'İletişim Kuruldu', color: '#3b82f6', count: 5 },
-  { id: 'proposal', label: 'Teklif Verildi', color: '#f59e0b', count: 3 },
-  { id: 'won', label: 'Kazanıldı', color: '#10b981', count: 4 },
-  { id: 'lost', label: 'Kaybedildi', color: '#ef4444', count: 2 },
-];
-
-const MOCK_LEADS = [
-  { id: 'l1', name: 'Berk Aydın', phone: '0533 100 2200', value: 4500, stage: 'proposal', source: 'Instagram', date: '2024-05-20' },
-  { id: 'l2', name: 'Deniz Kara', phone: '0541 200 3300', value: 2800, stage: 'contacted', source: 'Referans', date: '2024-05-22' },
-  { id: 'l3', name: 'Ece Mart', phone: '0555 300 4400', value: 6200, stage: 'lead', source: 'Web', date: '2024-05-25' },
-  { id: 'l4', name: 'Fırat Su', phone: '0546 400 5500', value: 1900, stage: 'won', source: 'Telefon', date: '2024-05-18' },
-  { id: 'l5', name: 'Gizem Tok', phone: '0538 500 6600', value: 3100, stage: 'lead', source: 'Instagram', date: '2024-05-27' },
-  { id: 'l6', name: 'Hakan Uz', phone: '0539 600 7700', value: 5500, stage: 'proposal', source: 'Referans', date: '2024-05-26' },
-  { id: 'l7', name: 'Iraz Can', phone: '0542 700 8800', value: 2200, stage: 'contacted', source: 'Web', date: '2024-05-24' },
+  { id: 'lead', label: 'Potansiyel', color: '#8b9ab5' },
+  { id: 'contacted', label: 'İletişim Kuruldu', color: '#3b82f6' },
+  { id: 'proposal', label: 'Teklif Verildi', color: '#f59e0b' },
+  { id: 'won', label: 'Kazanıldı', color: '#10b981' },
+  { id: 'lost', label: 'Kaybedildi', color: '#ef4444' },
 ];
 
 const formatCurrency = (n: number) =>
   new Intl.NumberFormat('tr-TR', { style: 'currency', currency: 'TRY', minimumFractionDigits: 0 }).format(n);
 
 export default function CRMPage() {
-  const [leads, setLeads] = useState(MOCK_LEADS);
+  const { tenant } = useStore();
+  const supabase = createClient();
+  const [leads, setLeads] = useState<Customer[]>([]);
+  const [loading, setLoading] = useState(true);
   const [showModal, setShowModal] = useState(false);
-  const [form, setForm] = useState({ name: '', phone: '', value: '', stage: 'lead', source: 'Web' });
+  const [form, setForm] = useState({ name: '', phone: '', estimated_value: '', stage: 'lead', source: 'Web' });
+  const [saving, setSaving] = useState(false);
 
-  const handleSave = () => {
-    if (!form.name) return;
-    setLeads((prev) => [{ id: `l${Date.now()}`, ...form, value: Number(form.value), date: new Date().toISOString().split('T')[0] }, ...prev]);
-    setShowModal(false);
-    setForm({ name: '', phone: '', value: '', stage: 'lead', source: 'Web' });
+  useEffect(() => {
+    fetchLeads();
+  }, [tenant?.id]);
+
+  const fetchLeads = async () => {
+    if (!tenant?.id) return;
+    setLoading(true);
+    const { data, error } = await supabase
+      .from('customers')
+      .select('*')
+      .order('created_at', { ascending: false });
+    
+    if (!error && data) {
+      setLeads(data as Customer[]);
+    }
+    setLoading(false);
   };
 
-  const moveStage = (id: string, stage: string) => {
-    setLeads((prev) => prev.map((l) => l.id === id ? { ...l, stage } : l));
+  const handleSave = async () => {
+    if (!form.name || !tenant?.id) return;
+    setSaving(true);
+    
+    const { data, error } = await supabase
+      .from('customers')
+      .insert([{
+        tenant_id: tenant.id,
+        name: form.name,
+        phone: form.phone,
+        estimated_value: Number(form.estimated_value) || 0,
+        stage: form.stage,
+        source: form.source
+      }])
+      .select()
+      .single();
+
+    if (!error && data) {
+      setLeads(prev => [data as Customer, ...prev]);
+      setShowModal(false);
+      setForm({ name: '', phone: '', estimated_value: '', stage: 'lead', source: 'Web' });
+    } else {
+      console.error('Lead eklenirken hata:', error);
+    }
+    setSaving(false);
   };
 
-  const totalValue = leads.reduce((s, l) => s + l.value, 0);
-  const wonValue = leads.filter((l) => l.stage === 'won').reduce((s, l) => s + l.value, 0);
-  const conversionRate = Math.round((leads.filter((l) => l.stage === 'won').length / leads.length) * 100);
+  const moveStage = async (id: string, stage: string) => {
+    const { error } = await supabase
+      .from('customers')
+      .update({ stage })
+      .eq('id', id);
+
+    if (!error) {
+      setLeads(prev => prev.map(l => l.id === id ? { ...l, stage } : l));
+    }
+  };
+
+  const totalValue = leads.reduce((s, l) => s + (l.estimated_value || 0), 0);
+  const wonValue = leads.filter(l => l.stage === 'won').reduce((s, l) => s + (l.estimated_value || 0), 0);
+  const conversionRate = leads.length > 0 
+    ? Math.round((leads.filter(l => l.stage === 'won').length / leads.length) * 100) 
+    : 0;
+
+  if (loading) {
+    return (
+      <div style={{ height: '60vh', display: 'flex', alignItems: 'center', justifyContent: 'center', flexDirection: 'column', gap: '12px' }}>
+        <Loader2 className="animate-spin" size={32} color="#6366f1" />
+        <p style={{ color: 'var(--text-muted)', fontSize: '14px' }}>Müşteri verileri yükleniyor...</p>
+      </div>
+    );
+  }
 
   return (
     <div>
@@ -75,11 +127,11 @@ export default function CRMPage() {
       </div>
 
       {/* Kanban Pipeline */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: '12px', overflowX: 'auto' }}>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: '12px', overflowX: 'auto', paddingBottom: '20px' }}>
         {STAGES.map((stage) => {
           const stageLeads = leads.filter((l) => l.stage === stage.id);
           return (
-            <div key={stage.id}>
+            <div key={stage.id} style={{ minWidth: '200px' }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '10px', padding: '0 4px' }}>
                 <div style={{ width: '8px', height: '8px', borderRadius: '50%', background: stage.color }} />
                 <span style={{ fontSize: '12px', fontWeight: '700', color: 'var(--text-secondary)' }}>{stage.label}</span>
@@ -87,27 +139,32 @@ export default function CRMPage() {
                   {stageLeads.length}
                 </span>
               </div>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', minHeight: '200px' }}>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', minHeight: '300px', background: 'rgba(255,255,255,0.01)', borderRadius: '12px', padding: '4px' }}>
                 {stageLeads.map((lead) => (
                   <div key={lead.id} className="card" style={{ padding: '12px', cursor: 'pointer' }}>
                     <div style={{ fontSize: '13px', fontWeight: '600', color: 'var(--text-primary)', marginBottom: '6px' }}>{lead.name}</div>
                     <div style={{ fontSize: '11px', color: 'var(--text-muted)', marginBottom: '4px', display: 'flex', alignItems: 'center', gap: '4px' }}>
                       <Phone size={9} /> {lead.phone}
                     </div>
-                    <div style={{ fontSize: '12px', fontWeight: '700', color: '#10b981', marginBottom: '8px' }}>{formatCurrency(lead.value)}</div>
+                    <div style={{ fontSize: '12px', fontWeight: '700', color: '#10b981', marginBottom: '8px' }}>{formatCurrency(lead.estimated_value || 0)}</div>
                     <div style={{ display: 'flex', gap: '4px', flexWrap: 'wrap' }}>
-                      {STAGES.filter((s) => s.id !== stage.id).slice(0, 2).map((s) => (
+                      {STAGES.filter((s) => s.id !== stage.id).map((s) => (
                         <button
                           key={s.id}
                           onClick={() => moveStage(lead.id, s.id)}
                           style={{ fontSize: '9px', padding: '2px 5px', borderRadius: '4px', background: `${s.color}15`, color: s.color, border: 'none', cursor: 'pointer', fontWeight: '600' }}
                         >
-                          → {s.label}
+                          → {s.label.split(' ')[0]}
                         </button>
                       ))}
                     </div>
                   </div>
                 ))}
+                {stageLeads.length === 0 && (
+                  <div style={{ border: '1px dashed var(--border)', borderRadius: '12px', height: '80px', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--text-muted)', fontSize: '11px' }}>
+                    Boş
+                  </div>
+                )}
               </div>
             </div>
           );
@@ -134,7 +191,7 @@ export default function CRMPage() {
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
                 <div>
                   <label className="input-label">Tahmini Değer (₺)</label>
-                  <input className="input" type="number" placeholder="0" value={form.value} onChange={(e) => setForm((p) => ({ ...p, value: e.target.value }))} />
+                  <input className="input" type="number" placeholder="0" value={form.estimated_value} onChange={(e) => setForm((p) => ({ ...p, estimated_value: e.target.value }))} />
                 </div>
                 <div>
                   <label className="input-label">Kaynak</label>
@@ -145,8 +202,10 @@ export default function CRMPage() {
               </div>
             </div>
             <div style={{ padding: '16px 24px', borderTop: '1px solid var(--border)', display: 'flex', gap: '10px', justifyContent: 'flex-end' }}>
-              <button className="btn btn-secondary" onClick={() => setShowModal(false)}>İptal</button>
-              <button className="btn btn-primary" onClick={handleSave}>Kaydet</button>
+              <button className="btn btn-secondary" onClick={() => setShowModal(false)} disabled={saving}>İptal</button>
+              <button className="btn btn-primary" onClick={handleSave} disabled={saving}>
+                {saving ? <Loader2 className="animate-spin" size={16} /> : 'Kaydet'}
+              </button>
             </div>
           </div>
         </div>

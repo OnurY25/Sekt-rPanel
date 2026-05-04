@@ -1,10 +1,10 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useStore } from '@/lib/store';
-import { generateMockAppointments, generateMockCustomers } from '@/lib/mockData';
-import { Appointment, AppointmentStatus } from '@/types';
-import { Calendar, Clock, Plus, X, CheckCircle, XCircle, AlertCircle } from 'lucide-react';
+import { createClient } from '@/lib/supabase/client';
+import { Appointment, AppointmentStatus, Customer } from '@/types';
+import { Calendar, Clock, Plus, X, CheckCircle, XCircle, AlertCircle, Loader2 } from 'lucide-react';
 
 const STATUS_LABELS: Record<AppointmentStatus, string> = {
   scheduled: 'Planlandı',
@@ -21,10 +21,34 @@ const STATUS_STYLES: Record<AppointmentStatus, string> = {
 };
 
 export default function AppointmentsPage() {
-  const { tenant, addNotification, appointments, customers, addAppointment, updateAppointment } = useStore();
+  const { tenant, addNotification } = useStore();
+  const supabase = createClient();
+  
+  const [appointments, setAppointments] = useState<Appointment[]>([]);
+  const [customers, setCustomers] = useState<Customer[]>([]);
+  const [loading, setLoading] = useState(true);
   const [showModal, setShowModal] = useState(false);
   const [selectedDate, setSelectedDate] = useState(new Date().toISOString().split('T')[0]);
   const [form, setForm] = useState({ customer_id: '', date: '', time: '', service: '', notes: '', status: 'scheduled' as AppointmentStatus });
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    if (tenant?.id) {
+      fetchData();
+    }
+  }, [tenant?.id]);
+
+  const fetchData = async () => {
+    setLoading(true);
+    const [apptsRes, custsRes] = await Promise.all([
+      supabase.from('appointments').select('*, customer:customers(id, name)').order('date').order('time'),
+      supabase.from('customers').select('id, name').order('name')
+    ]);
+
+    if (apptsRes.data) setAppointments(apptsRes.data as any);
+    if (custsRes.data) setCustomers(custsRes.data as any);
+    setLoading(false);
+  };
 
   if (!tenant) return null;
 
@@ -32,29 +56,56 @@ export default function AppointmentsPage() {
   const todayAppts = appointments.filter((a) => a.date === today);
   const upcomingAppts = appointments.filter((a) => a.date > today && a.status === 'scheduled');
 
-  const handleSave = () => {
-    if (!form.customer_id || !form.date) return;
-    const customer = customers.find((c) => c.id === form.customer_id);
-    const newAppt: Appointment = {
-      id: `a${Date.now()}`, tenant_id: tenant?.id || 't_terzi',
+  const handleSave = async () => {
+    if (!form.customer_id || !form.date || !tenant?.id) return;
+    setSaving(true);
+
+    const apptData = {
+      tenant_id: tenant.id,
       customer_id: form.customer_id,
-      customer: customer ? { id: customer.id, name: customer.name } : undefined,
-      date: form.date, time: form.time,
-      status: form.status, service: form.service, notes: form.notes,
+      date: form.date,
+      time: form.time,
+      service: form.service,
+      notes: form.notes,
+      status: form.status
     };
-    addAppointment(newAppt);
-    addNotification({ title: 'Randevu Oluşturuldu', message: `${customer?.name} için ${form.date} tarihinde randevu oluşturuldu.`, type: 'success' });
-    setShowModal(false);
-    setForm({ customer_id: '', date: '', time: '', service: '', notes: '', status: 'scheduled' });
+
+    const { data: newAppt, error } = await supabase
+      .from('appointments')
+      .insert([apptData])
+      .select('*, customer:customers(id, name)')
+      .single();
+
+    if (!error && newAppt) {
+      setAppointments(prev => [...prev, newAppt as any].sort((a, b) => a.date.localeCompare(b.date) || a.time.localeCompare(b.time)));
+      addNotification({ title: 'Randevu Oluşturuldu', message: `Yeni randevu başarıyla kaydedildi.`, type: 'success' });
+      setShowModal(false);
+      setForm({ customer_id: '', date: '', time: '', service: '', notes: '', status: 'scheduled' });
+    }
+
+    setSaving(false);
   };
 
-  const changeStatus = (id: string, status: AppointmentStatus) => {
-    updateAppointment(id, { status });
+  const changeStatus = async (id: string, status: AppointmentStatus) => {
+    const { error } = await supabase.from('appointments').update({ status }).eq('id', id);
+    if (!error) {
+      setAppointments(prev => prev.map(a => a.id === id ? { ...a, status } : a));
+      addNotification({ title: 'Durum Güncellendi', message: `Randevu durumu "${STATUS_LABELS[status]}" olarak güncellendi.`, type: 'info' });
+    }
   };
 
   const TimeSlots = ['09:00', '09:30', '10:00', '10:30', '11:00', '11:30', '13:00', '13:30', '14:00', '14:30', '15:00', '15:30', '16:00', '16:30', '17:00'];
 
   const selectedDateAppts = appointments.filter((a) => a.date === selectedDate);
+
+  if (loading) {
+    return (
+      <div style={{ height: '60vh', display: 'flex', alignItems: 'center', justifyContent: 'center', flexDirection: 'column', gap: '12px' }}>
+        <Loader2 className="animate-spin" size={32} color="#6366f1" />
+        <p style={{ color: 'var(--text-muted)', fontSize: '14px' }}>Randevular senkronize ediliyor...</p>
+      </div>
+    );
+  }
 
   return (
     <div>
@@ -85,7 +136,7 @@ export default function AppointmentsPage() {
 
           {/* Stats */}
           <div className="card" style={{ padding: '20px' }}>
-            <h3 style={{ fontSize: '14px', fontWeight: '700', marginBottom: '12px' }}>Bu Hafta</h3>
+            <h3 style={{ fontSize: '14px', fontWeight: '700', marginBottom: '12px' }}>Genel Durum</h3>
             {[
               { label: 'Planlandı', count: appointments.filter((a) => a.status === 'scheduled').length, color: '#3b82f6' },
               { label: 'Tamamlandı', count: appointments.filter((a) => a.status === 'completed').length, color: '#10b981' },
@@ -112,49 +163,51 @@ export default function AppointmentsPage() {
             {selectedDateAppts.length} randevu
           </p>
 
-          {TimeSlots.map((slot) => {
-            const appt = selectedDateAppts.find((a) => a.time === slot);
-            return (
-              <div key={slot} style={{ display: 'flex', gap: '12px', marginBottom: '6px', alignItems: 'flex-start' }}>
-                <div style={{ width: '48px', fontSize: '12px', color: 'var(--text-muted)', fontWeight: '500', paddingTop: '8px', flexShrink: 0 }}>
-                  {slot}
-                </div>
-                <div style={{ flex: 1, minHeight: '36px' }}>
-                  {appt ? (
-                    <div style={{
-                      padding: '8px 12px', borderRadius: '8px',
-                      background: appt.status === 'completed' ? 'rgba(16,185,129,0.1)' :
-                        appt.status === 'cancelled' ? 'rgba(239,68,68,0.08)' : 'rgba(99,102,241,0.1)',
-                      border: `1px solid ${appt.status === 'completed' ? 'rgba(16,185,129,0.2)' :
-                        appt.status === 'cancelled' ? 'rgba(239,68,68,0.15)' : 'rgba(99,102,241,0.2)'}`,
-                      display: 'flex', alignItems: 'center', gap: '10px',
-                    }}>
-                      <div style={{ flex: 1 }}>
-                        <div style={{ fontSize: '13px', fontWeight: '600', color: 'var(--text-primary)' }}>{appt.customer?.name}</div>
-                        {appt.service && <div style={{ fontSize: '12px', color: 'var(--text-muted)' }}>{appt.service}</div>}
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+            {TimeSlots.map((slot) => {
+              const appt = selectedDateAppts.find((a) => a.time === slot);
+              return (
+                <div key={slot} style={{ display: 'flex', gap: '12px', alignItems: 'flex-start' }}>
+                  <div style={{ width: '48px', fontSize: '12px', color: 'var(--text-muted)', fontWeight: '500', paddingTop: '8px', flexShrink: 0 }}>
+                    {slot}
+                  </div>
+                  <div style={{ flex: 1, minHeight: '36px' }}>
+                    {appt ? (
+                      <div style={{
+                        padding: '8px 12px', borderRadius: '8px',
+                        background: appt.status === 'completed' ? 'rgba(16,185,129,0.1)' :
+                          appt.status === 'cancelled' ? 'rgba(239,68,68,0.08)' : 'rgba(99,102,241,0.1)',
+                        border: `1px solid ${appt.status === 'completed' ? 'rgba(16,185,129,0.2)' :
+                          appt.status === 'cancelled' ? 'rgba(239,68,68,0.15)' : 'rgba(99,102,241,0.2)'}`,
+                        display: 'flex', alignItems: 'center', gap: '10px',
+                      }}>
+                        <div style={{ flex: 1 }}>
+                          <div style={{ fontSize: '13px', fontWeight: '600', color: 'var(--text-primary)' }}>{appt.customer?.name}</div>
+                          {appt.service && <div style={{ fontSize: '12px', color: 'var(--text-muted)' }}>{appt.service}</div>}
+                        </div>
+                        <span className={`badge ${STATUS_STYLES[appt.status]}`} style={{ fontSize: '11px', padding: '2px 8px' }}>
+                          {STATUS_LABELS[appt.status]}
+                        </span>
+                        <div style={{ display: 'flex', gap: '4px' }}>
+                          <button onClick={() => changeStatus(appt.id, 'completed')} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#10b981', padding: '2px' }} title="Tamamlandı">
+                            <CheckCircle size={14} />
+                          </button>
+                          <button onClick={() => changeStatus(appt.id, 'cancelled')} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#ef4444', padding: '2px' }} title="İptal Et">
+                            <XCircle size={14} />
+                          </button>
+                          <button onClick={() => changeStatus(appt.id, 'no_show')} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#f59e0b', padding: '2px' }} title="Gelmedi">
+                            <AlertCircle size={14} />
+                          </button>
+                        </div>
                       </div>
-                      <span className={`badge ${STATUS_STYLES[appt.status]}`} style={{ fontSize: '11px', padding: '2px 8px' }}>
-                        {STATUS_LABELS[appt.status]}
-                      </span>
-                      <div style={{ display: 'flex', gap: '4px' }}>
-                        <button onClick={() => changeStatus(appt.id, 'completed')} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#10b981', padding: '2px' }} title="Tamamlandı">
-                          <CheckCircle size={14} />
-                        </button>
-                        <button onClick={() => changeStatus(appt.id, 'cancelled')} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#ef4444', padding: '2px' }} title="İptal Et">
-                          <XCircle size={14} />
-                        </button>
-                        <button onClick={() => changeStatus(appt.id, 'no_show')} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#f59e0b', padding: '2px' }} title="Gelmedi">
-                          <AlertCircle size={14} />
-                        </button>
-                      </div>
-                    </div>
-                  ) : (
-                    <div style={{ height: '36px', borderRadius: '8px', border: '1px dashed rgba(255,255,255,0.04)', background: 'rgba(255,255,255,0.01)' }} />
-                  )}
+                    ) : (
+                      <div style={{ height: '36px', borderRadius: '8px', border: '1px dashed rgba(255,255,255,0.04)', background: 'rgba(255,255,255,0.01)' }} />
+                    )}
+                  </div>
                 </div>
-              </div>
-            );
-          })}
+              );
+            })}
+          </div>
         </div>
       </div>
 
@@ -197,8 +250,10 @@ export default function AppointmentsPage() {
               </div>
             </div>
             <div style={{ padding: '16px 24px', borderTop: '1px solid var(--border)', display: 'flex', gap: '10px', justifyContent: 'flex-end' }}>
-              <button className="btn btn-secondary" onClick={() => setShowModal(false)}>İptal</button>
-              <button className="btn btn-primary" onClick={handleSave}>Randevu Oluştur</button>
+              <button className="btn btn-secondary" onClick={() => setShowModal(false)} disabled={saving}>İptal</button>
+              <button className="btn btn-primary" onClick={handleSave} disabled={saving}>
+                {saving ? <Loader2 className="animate-spin" size={16} /> : 'Randevu Oluştur'}
+              </button>
             </div>
           </div>
         </div>

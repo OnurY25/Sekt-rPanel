@@ -30,6 +30,10 @@ CREATE TABLE customers (
     address TEXT,
     notes TEXT,
     tags TEXT[],
+    -- CRM Fields
+    stage TEXT DEFAULT 'lead', -- lead, contacted, proposal, won, lost
+    source TEXT DEFAULT 'Web',
+    estimated_value DECIMAL(10, 2) DEFAULT 0,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
 
@@ -121,9 +125,17 @@ USING (tenant_id = (SELECT tenant_id FROM profiles WHERE id = auth.uid()));
 -- 4. Automatically create profile on signup
 CREATE OR REPLACE FUNCTION public.handle_new_user() 
 RETURNS TRIGGER AS $$
+DECLARE
+  new_tenant_id UUID;
 BEGIN
-  INSERT INTO public.profiles (id, name, role)
-  VALUES (new.id, new.raw_user_meta_data->>'full_name', 'owner');
+  -- Create a default tenant for the new user
+  INSERT INTO public.tenants (company_name, sector)
+  VALUES (COALESCE(new.raw_user_meta_data->>'company_name', 'Yeni İşletme'), COALESCE(new.raw_user_meta_data->>'sector', 'other'))
+  RETURNING id INTO new_tenant_id;
+
+  INSERT INTO public.profiles (id, tenant_id, name, role)
+  VALUES (new.id, new_tenant_id, COALESCE(new.raw_user_meta_data->>'full_name', new.email), 'owner');
+  
   RETURN new;
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
