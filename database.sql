@@ -1,5 +1,5 @@
 -- 1. Create Core Tables
-CREATE TABLE tenants (
+CREATE TABLE IF NOT EXISTS tenants (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     company_name TEXT NOT NULL,
     sector TEXT NOT NULL,
@@ -12,7 +12,7 @@ CREATE TABLE tenants (
 );
 
 -- Extended User table linked to Supabase Auth
-CREATE TABLE profiles (
+CREATE TABLE IF NOT EXISTS profiles (
     id UUID PRIMARY KEY REFERENCES auth.users(id) ON DELETE CASCADE,
     tenant_id UUID REFERENCES tenants(id) ON DELETE CASCADE,
     name TEXT NOT NULL,
@@ -22,7 +22,10 @@ CREATE TABLE profiles (
     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
 
-CREATE TABLE customers (
+-- Ensure ip_address column exists for older deployments
+ALTER TABLE profiles ADD COLUMN IF NOT EXISTS ip_address TEXT;
+
+CREATE TABLE IF NOT EXISTS customers (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     tenant_id UUID NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
     name TEXT NOT NULL,
@@ -38,7 +41,7 @@ CREATE TABLE customers (
     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
 
-CREATE TABLE orders (
+CREATE TABLE IF NOT EXISTS orders (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     tenant_id UUID NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
     customer_id UUID NOT NULL REFERENCES customers(id) ON DELETE CASCADE,
@@ -53,7 +56,7 @@ CREATE TABLE orders (
     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
 
-CREATE TABLE payments (
+CREATE TABLE IF NOT EXISTS payments (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     tenant_id UUID NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
     order_id UUID REFERENCES orders(id) ON DELETE SET NULL,
@@ -64,7 +67,7 @@ CREATE TABLE payments (
     paid_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
 
-CREATE TABLE appointments (
+CREATE TABLE IF NOT EXISTS appointments (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     tenant_id UUID NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
     customer_id UUID NOT NULL REFERENCES customers(id) ON DELETE CASCADE,
@@ -76,7 +79,7 @@ CREATE TABLE appointments (
     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
 
-CREATE TABLE tasks (
+CREATE TABLE IF NOT EXISTS tasks (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     tenant_id UUID NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
     title TEXT NOT NULL,
@@ -98,27 +101,33 @@ ALTER TABLE tasks ENABLE ROW LEVEL SECURITY;
 
 -- 3. Create RLS Policies
 -- Profiles can only see their own profile
+DROP POLICY IF EXISTS "Users can view own profile" ON profiles;
 CREATE POLICY "Users can view own profile" 
 ON profiles FOR SELECT 
 USING (auth.uid() = id);
 
 -- Users can only view data from their own tenant
+DROP POLICY IF EXISTS "Tenant isolation for customers" ON customers;
 CREATE POLICY "Tenant isolation for customers" 
 ON customers FOR ALL 
 USING (tenant_id = (SELECT tenant_id FROM profiles WHERE id = auth.uid()));
 
+DROP POLICY IF EXISTS "Tenant isolation for orders" ON orders;
 CREATE POLICY "Tenant isolation for orders" 
 ON orders FOR ALL 
 USING (tenant_id = (SELECT tenant_id FROM profiles WHERE id = auth.uid()));
 
+DROP POLICY IF EXISTS "Tenant isolation for payments" ON payments;
 CREATE POLICY "Tenant isolation for payments" 
 ON payments FOR ALL 
 USING (tenant_id = (SELECT tenant_id FROM profiles WHERE id = auth.uid()));
 
+DROP POLICY IF EXISTS "Tenant isolation for appointments" ON appointments;
 CREATE POLICY "Tenant isolation for appointments" 
 ON appointments FOR ALL 
 USING (tenant_id = (SELECT tenant_id FROM profiles WHERE id = auth.uid()));
 
+DROP POLICY IF EXISTS "Tenant isolation for tasks" ON tasks;
 CREATE POLICY "Tenant isolation for tasks" 
 ON tasks FOR ALL 
 USING (tenant_id = (SELECT tenant_id FROM profiles WHERE id = auth.uid()));
@@ -152,6 +161,7 @@ REVOKE EXECUTE ON FUNCTION public.handle_new_user() FROM PUBLIC;
 REVOKE EXECUTE ON FUNCTION public.handle_new_user() FROM anon;
 REVOKE EXECUTE ON FUNCTION public.handle_new_user() FROM authenticated;
 
+DROP TRIGGER IF EXISTS on_auth_user_created ON auth.users;
 CREATE TRIGGER on_auth_user_created
   AFTER INSERT ON auth.users
   FOR EACH ROW EXECUTE PROCEDURE public.handle_new_user();

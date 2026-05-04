@@ -98,69 +98,59 @@ export async function registerAction(email: string, password: string, company_na
   const ip = headersList.get('x-forwarded-for')?.split(',')[0] || 'unknown';
 
   const supabase = await createClient();
-
-  // Check IP limit
   const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
-  if (serviceRoleKey && process.env.NEXT_PUBLIC_SUPABASE_URL) {
-    const { createClient: createSupabaseClient } = await import('@supabase/supabase-js');
-    const adminClient = createSupabaseClient(
-      process.env.NEXT_PUBLIC_SUPABASE_URL,
-      serviceRoleKey,
-      { auth: { autoRefreshToken: false, persistSession: false } }
-    );
 
-    const { count, error: countError } = await adminClient
-      .from('profiles')
-      .select('*', { count: 'exact', head: true })
-      .eq('ip_address', ip);
-
-    if (countError) {
-      console.error("IP check error:", countError);
-    } else if (count !== null && count >= 2) {
-      return { error: 'Bu cihazdan çok fazla hesap oluşturuldu. Güvenlik nedeniyle aynı cihazdan en fazla 2 hesap açabilirsiniz.' };
-    }
+  // Require admin client — if not configured we can't guarantee email confirmation bypass
+  if (!serviceRoleKey || !process.env.NEXT_PUBLIC_SUPABASE_URL) {
+    return { error: 'Sunucu yapılandırması eksik. Lütfen yönetici ile iletişime geçin.' };
   }
 
-  const { data, error } = await supabase.auth.signUp({
+  const { createClient: createSupabaseClient } = await import('@supabase/supabase-js');
+  const adminClient = createSupabaseClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL,
+    serviceRoleKey,
+    { auth: { autoRefreshToken: false, persistSession: false } }
+  );
+
+  // Check IP limit (max 2 accounts per device)
+  const { count, error: countError } = await adminClient
+    .from('profiles')
+    .select('*', { count: 'exact', head: true })
+    .eq('ip_address', ip);
+
+  if (countError) {
+    console.error("IP check error:", countError);
+  } else if (count !== null && count >= 2) {
+    return { error: 'Bu cihazdan çok fazla hesap oluşturuldu. Güvenlik nedeniyle aynı cihazdan en fazla 2 hesap açabilirsiniz.' };
+  }
+
+  // Create user via admin API with email_confirm: true (completely bypasses email verification)
+  const { data: adminData, error: adminError } = await adminClient.auth.admin.createUser({
     email: sanitizedEmail,
     password,
-    options: {
-      data: {
-        full_name: company_name + ' Yöneticisi',
-        company_name,
-        sector,
-        ip_address: ip
-      }
+    email_confirm: true,
+    user_metadata: {
+      full_name: company_name + ' Yöneticisi',
+      company_name,
+      sector,
+      ip_address: ip
     }
   });
 
-  if (error) {
-    return { error: translateAuthError(error.message) };
+  if (adminError) {
+    return { error: translateAuthError(adminError.message) };
   }
 
-// Auto-confirm logic
-  if (data.user && !data.session) {
-    if (serviceRoleKey && process.env.NEXT_PUBLIC_SUPABASE_URL) {
-      const { createClient: createSupabaseClient } = await import('@supabase/supabase-js');
-      const adminClient = createSupabaseClient(
-        process.env.NEXT_PUBLIC_SUPABASE_URL,
-        serviceRoleKey,
-        { auth: { autoRefreshToken: false, persistSession: false } }
-      );
-      
-      // Forcibly confirm the user's email
-      const { error: confirmError } = await adminClient.auth.admin.updateUserById(
-        data.user.id,
-        { email_confirm: true }
-      );
-      
-      if (confirmError) {
-        console.error("Auto confirm error:", confirmError);
-      }
-    } else {
-      return { error: translateAuthError('Confirm Email') };
-    }
+  // Immediately sign the new user in so they land directly on the dashboard
+  const { data: signInData, error: signInError } = await supabase.auth.signInWithPassword({
+    email: sanitizedEmail,
+    password,
+  });
+
+  if (signInError) {
+    // User was created but sign-in failed — tell them to log in manually
+    return { error: 'Hesabınız oluşturuldu! Ancak otomatik giriş başarısız oldu. Lütfen e-posta ve şifrenizle giriş yapınız.' };
   }
 
-  return { success: true, user: data.user };
+  return { success: true, user: signInData.user };
 }
