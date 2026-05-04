@@ -145,7 +145,12 @@ BEGIN
   
   RETURN new;
 END;
-$$ LANGUAGE plpgsql SECURITY DEFINER;
+$$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = public;
+
+-- Revoke execute from public/anon to prevent unauthorized manual execution
+REVOKE EXECUTE ON FUNCTION public.handle_new_user() FROM PUBLIC;
+REVOKE EXECUTE ON FUNCTION public.handle_new_user() FROM anon;
+REVOKE EXECUTE ON FUNCTION public.handle_new_user() FROM authenticated;
 
 CREATE TRIGGER on_auth_user_created
   AFTER INSERT ON auth.users
@@ -157,7 +162,7 @@ VALUES ('documents', 'documents', true)
 ON CONFLICT (id) DO UPDATE SET public = true;
 
 DROP POLICY IF EXISTS "Public Access" ON storage.objects;
-CREATE POLICY "Public Access" ON storage.objects FOR SELECT USING (bucket_id = 'documents');
+CREATE POLICY "Public Access" ON storage.objects FOR SELECT USING (bucket_id = 'documents' AND auth.role() = 'authenticated');
 
 DROP POLICY IF EXISTS "Auth Insert" ON storage.objects;
 CREATE POLICY "Auth Insert" ON storage.objects FOR INSERT WITH CHECK (bucket_id = 'documents' AND auth.role() = 'authenticated');
