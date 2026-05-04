@@ -18,6 +18,7 @@ CREATE TABLE profiles (
     name TEXT NOT NULL,
     role TEXT NOT NULL DEFAULT 'staff',
     avatar TEXT,
+    ip_address TEXT,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
 
@@ -139,8 +140,8 @@ BEGIN
   )
   RETURNING id INTO new_tenant_id;
 
-  INSERT INTO public.profiles (id, tenant_id, name, role)
-  VALUES (new.id, new_tenant_id, COALESCE(new.raw_user_meta_data->>'full_name', new.email), 'owner');
+  INSERT INTO public.profiles (id, tenant_id, name, role, ip_address)
+  VALUES (new.id, new_tenant_id, COALESCE(new.raw_user_meta_data->>'full_name', new.email), 'owner', new.raw_user_meta_data->>'ip_address');
   
   RETURN new;
 END;

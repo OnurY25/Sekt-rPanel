@@ -76,7 +76,33 @@ export async function logoutAction() {
 }
 
 export async function registerAction(email: string, password: string, company_name: string, sector: string) {
+  const { headers } = await import('next/headers');
+  const headersList = await headers();
+  const ip = headersList.get('x-forwarded-for')?.split(',')[0] || 'unknown';
+
   const supabase = await createClient();
+
+  // Check IP limit
+  const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+  if (serviceRoleKey && process.env.NEXT_PUBLIC_SUPABASE_URL) {
+    const { createClient: createSupabaseClient } = await import('@supabase/supabase-js');
+    const adminClient = createSupabaseClient(
+      process.env.NEXT_PUBLIC_SUPABASE_URL,
+      serviceRoleKey,
+      { auth: { autoRefreshToken: false, persistSession: false } }
+    );
+
+    const { count, error: countError } = await adminClient
+      .from('profiles')
+      .select('*', { count: 'exact', head: true })
+      .eq('ip_address', ip);
+
+    if (countError) {
+      console.error("IP check error:", countError);
+    } else if (count !== null && count >= 2) {
+      return { error: 'Bu cihazdan çok fazla hesap oluşturuldu. Güvenlik nedeniyle aynı cihazdan en fazla 2 hesap açabilirsiniz.' };
+    }
+  }
 
   const { data, error } = await supabase.auth.signUp({
     email,
@@ -85,7 +111,8 @@ export async function registerAction(email: string, password: string, company_na
       data: {
         full_name: company_name + ' Yöneticisi',
         company_name,
-        sector
+        sector,
+        ip_address: ip
       }
     }
   });
@@ -100,7 +127,6 @@ export async function registerAction(email: string, password: string, company_na
 
   // Auto-confirm logic
   if (data.user && !data.session) {
-    const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
     if (serviceRoleKey && process.env.NEXT_PUBLIC_SUPABASE_URL) {
       const { createClient: createSupabaseClient } = await import('@supabase/supabase-js');
       const adminClient = createSupabaseClient(
