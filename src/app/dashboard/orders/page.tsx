@@ -7,6 +7,8 @@ import { getSectorConfig, getStatusLabel, STATUS_COLORS } from '@/lib/sectors';
 import { Order, OrderStatus, Customer } from '@/types';
 import { Search, Plus, X, Filter, Calendar, CreditCard, ChevronDown, Loader2 } from 'lucide-react';
 
+import AutoserviceOrders from '@/components/AutoserviceOrders';
+
 const formatCurrency = (n: number) =>
   new Intl.NumberFormat('tr-TR', { style: 'currency', currency: 'TRY', minimumFractionDigits: 0 }).format(n);
 
@@ -46,8 +48,13 @@ export default function OrdersPage() {
   };
 
   if (!tenant) return null;
+  
+  if (tenant.sector === 'autoservice') {
+    return <AutoserviceOrders />;
+  }
+
   const config = getSectorConfig(tenant.sector);
-  const orderLabel = tenant.sector === 'dental' ? 'Tedavi' : tenant.sector === 'autoservice' ? 'Servis İşi' : 'Sipariş';
+  const orderLabel = tenant.sector === 'dental' ? 'Tedavi' : 'Sipariş';
 
   const filtered = orders.filter((o) => {
     const matchSearch = o.title.toLowerCase().includes(search.toLowerCase()) || (o.customer?.name || '').toLowerCase().includes(search.toLowerCase());
