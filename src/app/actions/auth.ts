@@ -53,6 +53,7 @@ export async function loginAction(email: string, password?: string) {
   } else if (error) {
     let msg = error.message;
     if (msg.includes('Email not confirmed')) msg = 'Lütfen e-posta adresinizi doğrulayın. (Eğer test ortamındaysanız Supabase panelinden "Confirm Email" ayarını kapatın)';
+    if (msg.includes('Unable to validate email address') || msg.includes('invalid format')) msg = 'Lütfen geçerli bir e-posta adresi giriniz (örnek: info@firma.com).';
     return { error: msg };
   }
 
@@ -129,6 +130,7 @@ export async function registerAction(email: string, password: string, company_na
     if (msg.includes('already registered')) msg = 'Bu e-posta adresi zaten sistemimizde kayıtlı.';
     if (msg.includes('Password should be at least')) msg = 'Şifreniz en az 6 karakter olmalıdır.';
     if (msg.includes('rate limit')) msg = 'Çok fazla kayıt denemesi yaptınız, lütfen birkaç dakika bekleyin.';
+    if (msg.includes('Unable to validate email address') || msg.includes('invalid format')) msg = 'Lütfen geçerli bir e-posta adresi giriniz (örnek: info@firma.com).';
     return { error: msg };
   }
 
