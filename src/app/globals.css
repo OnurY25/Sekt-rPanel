@@ -471,3 +471,30 @@ textarea.input {
   .page-content { padding: 16px; }
   .stats-grid { grid-template-columns: 1fr 1fr; }
 }
+
+/* Print Styles for Autoservice PDF */
+.print-only { display: none; }
+
+@media print {
+  @page { margin: 10mm; size: A4; }
+  body { background: #fff !important; color: #000 !important; }
+  .no-print { display: none !important; }
+  .print-only { display: block !important; }
+  
+  .print-table { width: 100%; border-collapse: collapse; }
+  .print-table td, .print-table th { 
+    border: 1px solid #000; 
+    padding: 6px 8px; 
+    font-size: 13px;
+  }
+  .print-table .bg-gray { 
+    background-color: #d1d5db !important; 
+    -webkit-print-color-adjust: exact; 
+    print-color-adjust: exact; 
+  }
+  .print-table .bg-orange { 
+    background-color: #fed7aa !important; 
+    -webkit-print-color-adjust: exact; 
+    print-color-adjust: exact; 
+  }
+}

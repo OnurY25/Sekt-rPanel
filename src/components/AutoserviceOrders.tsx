@@ -4,7 +4,7 @@ import { useState, useEffect } from 'react';
 import { useStore } from '@/lib/store';
 import { createClient } from '@/lib/supabase/client';
 import { Order, Customer } from '@/types';
-import { Plus, CheckCircle, Clock, Edit2 } from 'lucide-react';
+import { Plus, CheckCircle, Clock, Edit2, Printer, Settings } from 'lucide-react';
 
 export default function AutoserviceOrders() {
   const { tenant, addNotification } = useStore();
@@ -16,9 +16,24 @@ export default function AutoserviceOrders() {
   const [statusFilter, setStatusFilter] = useState<'all' | 'in_progress' | 'completed'>('all');
   const [selectedOrder, setSelectedOrder] = useState<Order | null>(null);
 
+  const [contactPhone, setContactPhone] = useState('');
+  const [contactEmail, setContactEmail] = useState('');
+  const [showSettings, setShowSettings] = useState(false);
+
   useEffect(() => {
     if (tenant?.id) fetchData();
+    const storedPhone = localStorage.getItem('auto_phone');
+    const storedEmail = localStorage.getItem('auto_email');
+    if (storedPhone) setContactPhone(storedPhone);
+    if (storedEmail) setContactEmail(storedEmail);
   }, [tenant?.id]);
+
+  const saveSettings = () => {
+    localStorage.setItem('auto_phone', contactPhone);
+    localStorage.setItem('auto_email', contactEmail);
+    setShowSettings(false);
+    addNotification({ title: 'Başarılı', message: 'İletişim bilgileri kaydedildi.', type: 'success' });
+  };
 
   const fetchData = async () => {
     setLoading(true);
@@ -60,9 +75,14 @@ export default function AutoserviceOrders() {
     <div style={{ display: 'flex', height: 'calc(100vh - 60px)', background: '#f1f5f9', color: '#1e293b', overflow: 'hidden' }}>
       
       {/* Left List Column */}
-      <div style={{ width: '340px', background: '#ffffff', borderRight: '1px solid #e2e8f0', display: 'flex', flexDirection: 'column' }}>
+      <div className="no-print" style={{ width: '340px', background: '#ffffff', borderRight: '1px solid #e2e8f0', display: 'flex', flexDirection: 'column' }}>
         <div style={{ padding: '20px', borderBottom: '1px solid #e2e8f0' }}>
-          <h2 style={{ fontSize: '16px', fontWeight: '700', marginBottom: '16px', color: '#0f172a' }}>İş Yönetimi</h2>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '16px' }}>
+            <h2 style={{ fontSize: '16px', fontWeight: '700', color: '#0f172a' }}>İş Yönetimi</h2>
+            <button onClick={() => setShowSettings(true)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#64748b' }}>
+              <Settings size={18} />
+            </button>
+          </div>
           
           <div style={{ display: 'flex', gap: '8px', marginBottom: '16px', background: '#f8fafc', padding: '4px', borderRadius: '10px' }}>
             <button 
@@ -125,14 +145,19 @@ export default function AutoserviceOrders() {
       </div>
 
       {/* Right Details Column */}
-      <div style={{ flex: 1, padding: '32px', overflowY: 'auto' }}>
+      <div className="no-print" style={{ flex: 1, padding: '32px', overflowY: 'auto' }}>
         {selectedOrder ? (
           <div style={{ maxWidth: '900px', margin: '0 auto' }}>
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '24px' }}>
               <h1 style={{ fontSize: '20px', fontWeight: '800', color: '#1e3a8a', textTransform: 'uppercase', letterSpacing: '0.05em' }}>ARAÇ KABUL FORMU</h1>
-              <button style={{ background: 'none', border: 'none', color: '#2563eb', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '6px', fontWeight: '600' }}>
-                <Edit2 size={16} /> Düzenle
-              </button>
+              <div style={{ display: 'flex', gap: '12px' }}>
+                <button onClick={() => window.print()} style={{ background: '#fff', border: '1px solid #cbd5e1', color: '#0f172a', padding: '8px 16px', borderRadius: '8px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '6px', fontWeight: '600' }}>
+                  <Printer size={16} /> Çıktı Al
+                </button>
+                <button style={{ background: 'none', border: 'none', color: '#2563eb', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '6px', fontWeight: '600' }}>
+                  <Edit2 size={16} /> Düzenle
+                </button>
+              </div>
             </div>
 
             <div style={{ display: 'grid', gridTemplateColumns: '1.5fr 1fr', gap: '24px', marginBottom: '24px' }}>
@@ -209,6 +234,138 @@ export default function AutoserviceOrders() {
         ) : (
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%', color: '#94a3b8' }}>
             Görüntülemek için sol taraftan bir iş seçin.
+          </div>
+        )}
+      </div>
+
+      {/* Settings Modal */}
+      {showSettings && (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', zIndex: 100, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+          <div style={{ background: '#fff', padding: '24px', borderRadius: '12px', width: '400px' }}>
+            <h3 style={{ fontSize: '18px', fontWeight: '700', marginBottom: '16px' }}>Firma Bilgilerini Ayarla</h3>
+            <p style={{ fontSize: '13px', color: '#64748b', marginBottom: '16px' }}>Bu bilgiler PDF çıktısında sağ üst köşede görünecektir.</p>
+            <div style={{ marginBottom: '12px' }}>
+              <label style={{ display: 'block', fontSize: '13px', fontWeight: '600', marginBottom: '4px' }}>İletişim Telefonu</label>
+              <input type="text" value={contactPhone} onChange={(e) => setContactPhone(e.target.value)} placeholder="Örn: 552-245-6598" style={{ width: '100%', padding: '10px', borderRadius: '6px', border: '1px solid #cbd5e1', outline: 'none' }} />
+            </div>
+            <div style={{ marginBottom: '24px' }}>
+              <label style={{ display: 'block', fontSize: '13px', fontWeight: '600', marginBottom: '4px' }}>İletişim E-posta</label>
+              <input type="text" value={contactEmail} onChange={(e) => setContactEmail(e.target.value)} placeholder="Örn: info@firma.com" style={{ width: '100%', padding: '10px', borderRadius: '6px', border: '1px solid #cbd5e1', outline: 'none' }} />
+            </div>
+            <div style={{ display: 'flex', gap: '12px', justifyContent: 'flex-end' }}>
+              <button onClick={() => setShowSettings(false)} style={{ padding: '8px 16px', background: '#e2e8f0', color: '#475569', border: 'none', borderRadius: '6px', cursor: 'pointer', fontWeight: '600' }}>İptal</button>
+              <button onClick={saveSettings} style={{ padding: '8px 16px', background: '#2563eb', color: '#fff', border: 'none', borderRadius: '6px', cursor: 'pointer', fontWeight: '600' }}>Kaydet</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* PRINT ONLY VIEW */}
+      <div className="print-only">
+        {selectedOrder && (
+          <div style={{ width: '100%', background: '#fff', fontFamily: 'Arial, sans-serif' }}>
+            {/* Header */}
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: '#000', color: '#fff', padding: '12px 24px' }}>
+              <div style={{ fontSize: '20px', fontWeight: 'bold', textTransform: 'uppercase', fontStyle: 'italic' }}>
+                {tenant?.company_name || 'ÖZEL SERVİS'}
+              </div>
+              <div style={{ textAlign: 'right', fontSize: '14px', fontStyle: 'italic' }}>
+                <div>İletişim: {contactPhone || '-'}</div>
+                <div>{contactEmail || '-'}</div>
+              </div>
+            </div>
+            
+            <div style={{ background: '#000', color: '#fff', textAlign: 'center', padding: '6px', fontSize: '18px', fontWeight: 'bold', borderTop: '1px solid #333' }}>
+              ARAÇ KABUL FORMU
+            </div>
+
+            <table className="print-table" style={{ width: '100%', borderCollapse: 'collapse', border: '2px solid #000' }}>
+              <tbody>
+                <tr className="bg-gray">
+                  <td colSpan={2} style={{ textAlign: 'center', fontWeight: 'bold' }}>ARAÇ & MÜŞTERİ BİLGİSİ</td>
+                  <td colSpan={2} style={{ textAlign: 'center', fontWeight: 'bold' }}>GELİŞ TARİHİ</td>
+                  <td colSpan={2} style={{ textAlign: 'center', fontWeight: 'bold' }}>TESLİM TARİHİ</td>
+                </tr>
+                <tr>
+                  <td style={{ fontWeight: 'bold', width: '15%' }}>ADI SOYADI</td>
+                  <td style={{ width: '35%' }}>{selectedOrder.customer?.name}</td>
+                  <td colSpan={2} rowSpan={2} style={{ textAlign: 'center', verticalAlign: 'middle' }}>{new Date(selectedOrder.created_at).toLocaleDateString('tr-TR')}</td>
+                  <td colSpan={2} rowSpan={2} style={{ textAlign: 'center', verticalAlign: 'middle' }}>-</td>
+                </tr>
+                <tr>
+                  <td style={{ fontWeight: 'bold' }}>MARKA</td>
+                  <td>{selectedOrder.custom_data?.marka}</td>
+                </tr>
+                <tr>
+                  <td style={{ fontWeight: 'bold' }}>MODEL</td>
+                  <td>{selectedOrder.custom_data?.model}</td>
+                  <td colSpan={2} className="bg-gray" style={{ textAlign: 'center', fontWeight: 'bold' }}>YAKIT</td>
+                  <td colSpan={2} className="bg-gray" style={{ textAlign: 'center', fontWeight: 'bold' }}>KİLOMETRE</td>
+                </tr>
+                <tr>
+                  <td style={{ fontWeight: 'bold' }}>PLAKA</td>
+                  <td>{selectedOrder.custom_data?.plaka}</td>
+                  <td colSpan={2} rowSpan={2} style={{ textAlign: 'center', verticalAlign: 'middle' }}>{selectedOrder.custom_data?.yakit || '-'}</td>
+                  <td colSpan={2} rowSpan={2} style={{ textAlign: 'center', verticalAlign: 'middle' }}>{selectedOrder.custom_data?.kilometre || '-'}</td>
+                </tr>
+                <tr>
+                  <td style={{ fontWeight: 'bold' }}>TEL NO</td>
+                  <td>{selectedOrder.customer?.phone}</td>
+                </tr>
+                <tr>
+                  <td colSpan={4} style={{ borderRight: 'none' }}></td>
+                  <td colSpan={2} className="bg-gray" style={{ textAlign: 'center', fontWeight: 'bold', borderLeft: '1px solid #000' }}>ÖDEME TİPİ</td>
+                </tr>
+                <tr>
+                  <td colSpan={4} style={{ borderRight: 'none' }}></td>
+                  <td colSpan={2} style={{ textAlign: 'center', borderLeft: '1px solid #000' }}>NAKİT / KART</td>
+                </tr>
+                
+                {/* İstekler */}
+                <tr><td colSpan={6} className="bg-gray" style={{ textAlign: 'center', fontWeight: 'bold' }}>MÜŞTERİ İSTEKLERİ</td></tr>
+                <tr><td colSpan={3}>1 - {selectedOrder.custom_data?.sikayet || ''}</td><td colSpan={3}>4 -</td></tr>
+                <tr><td colSpan={3}>2 -</td><td colSpan={3}>5 -</td></tr>
+                <tr><td colSpan={3}>3 -</td><td colSpan={3}>6 -</td></tr>
+
+                {/* Parça ve İşçilik */}
+                <tr><td colSpan={6} className="bg-gray" style={{ textAlign: 'center', fontWeight: 'bold' }}>FİYAT LİSTESİ</td></tr>
+                <tr><td colSpan={4} className="bg-gray" style={{ textAlign: 'center', fontWeight: 'bold' }}>PARÇA & İŞÇİLİK</td><td colSpan={2} className="bg-gray" style={{ textAlign: 'center', fontWeight: 'bold' }}>FİYAT</td></tr>
+                {Array.from({ length: 10 }).map((_, i) => (
+                  <tr key={i}>
+                    <td colSpan={4}>{i + 1} - </td>
+                    <td colSpan={2}></td>
+                  </tr>
+                ))}
+                
+                <tr>
+                  <td colSpan={3} style={{ borderRight: 'none' }}></td>
+                  <td className="bg-orange" style={{ textAlign: 'right', fontWeight: 'bold', borderLeft: '1px solid #000' }}>TOPLAM</td>
+                  <td colSpan={2} className="bg-orange" style={{ textAlign: 'right', fontWeight: 'bold' }}>₺{selectedOrder.price.toLocaleString('tr-TR')}</td>
+                </tr>
+
+                {/* Footer */}
+                <tr>
+                  <td colSpan={3} className="bg-gray" style={{ textAlign: 'center', fontWeight: 'bold' }}>ONAY</td>
+                  <td colSpan={3} className="bg-gray" style={{ textAlign: 'center', fontWeight: 'bold' }}>MÜŞTERİYE İLETİLECEK NOTLAR</td>
+                </tr>
+                <tr>
+                  <td colSpan={3} style={{ textAlign: 'center', fontWeight: 'bold' }}>İLGİLİ USTA</td>
+                  <td colSpan={3}>1 - {selectedOrder.notes || ''}</td>
+                </tr>
+                <tr>
+                  <td colSpan={3} className="bg-gray" style={{ textAlign: 'center', fontWeight: 'bold' }}>-</td>
+                  <td colSpan={3}>2 -</td>
+                </tr>
+                <tr>
+                  <td colSpan={3} className="bg-gray"></td>
+                  <td colSpan={3}>3 -</td>
+                </tr>
+                <tr>
+                  <td colSpan={3} className="bg-gray"></td>
+                  <td colSpan={3}>4 -</td>
+                </tr>
+              </tbody>
+            </table>
           </div>
         )}
       </div>
