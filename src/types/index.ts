@@ -56,6 +56,9 @@ export interface Customer {
   total_spent?: number;
   created_at: string;
   tags?: string[];
+  stage?: string;
+  source?: string;
+  estimated_value?: number;
 }
 
 export interface Order {
