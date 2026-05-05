@@ -124,22 +124,31 @@ export default function LandingPage() {
         return;
       }
 
-      const tenantData = MOCK_TENANTS[e] || { id: 'new-tenant', company: companyName || 'İşletme', sector: sector || 'other', plan: 'trial' };
+      // Check if we got real data from the DB
+      const dbProfile = result.profile;
+      const dbTenant = dbProfile?.tenants;
+
+      const tenantData = MOCK_TENANTS[e] || { 
+        id: dbTenant?.id || 'new-tenant', 
+        company: dbTenant?.company_name || companyName || 'İşletme', 
+        sector: dbTenant?.sector || sector || 'other', 
+        plan: dbTenant?.plan || 'trial' 
+      };
       
       const user: User = {
         id: result.user?.id || 'u1',
-        tenant_id: result.profile?.tenant_id || tenantData.id,
-        name: result.profile?.name || tenantData.company + ' Yöneticisi',
+        tenant_id: tenantData.id,
+        name: dbProfile?.name || tenantData.company + ' Yöneticisi',
         email: e,
         role: 'owner',
         created_at: new Date().toISOString(),
       };
 
       const tenant: Tenant = {
-        id: result.profile?.tenants?.id || tenantData.id,
-        company_name: result.profile?.tenants?.company_name || tenantData.company,
-        sector: (result.profile?.tenants?.sector || tenantData.sector) as any,
-        plan: (result.profile?.tenants?.plan || tenantData.plan) as any,
+        id: tenantData.id,
+        company_name: tenantData.company,
+        sector: tenantData.sector as any,
+        plan: tenantData.plan as any,
         status: 'active',
         created_at: new Date().toISOString(),
         currency: 'TRY',
