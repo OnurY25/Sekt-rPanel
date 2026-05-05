@@ -9,39 +9,19 @@ import AIAssistant from '@/components/AIAssistant';
 import { getSectorConfig } from '@/lib/sectors';
 
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
-  const { isAuthenticated, tenant, setAuth } = useStore();
+  const { isAuthenticated, tenant } = useStore();
   const router = useRouter();
 
   useEffect(() => {
-    const restoreSession = () => {
-      try {
-        const stored_user = localStorage.getItem('saas_user');
-        const stored_tenant = localStorage.getItem('saas_tenant');
-        const stored_token = localStorage.getItem('saas_token');
-
-        if (!isAuthenticated) {
-          if (stored_user && stored_tenant && stored_token) {
-            const user = JSON.parse(stored_user);
-            const tenant = JSON.parse(stored_tenant);
-            
-            if (user && tenant && stored_token) {
-              setAuth(user, tenant, stored_token);
-            } else {
-              router.replace('/');
-            }
-          } else {
-            router.replace('/');
-          }
-        }
-      } catch (err) {
-        console.error('Session restoration failed:', err);
-        localStorage.clear();
+    // Zustand persist handles rehydration automatically.
+    // This effect only redirects if after hydration the user is still not authenticated.
+    const timer = setTimeout(() => {
+      if (!isAuthenticated) {
         router.replace('/');
       }
-    };
-
-    restoreSession();
-  }, [isAuthenticated, router, setAuth]);
+    }, 300); // Small delay to allow zustand to rehydrate from localStorage
+    return () => clearTimeout(timer);
+  }, [isAuthenticated, router]);
 
   if (!isAuthenticated || !tenant) {
     return (

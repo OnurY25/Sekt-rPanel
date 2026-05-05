@@ -49,8 +49,8 @@ Kurallar:
     }
 
     const response = await anthropic.messages.create({
-      model: "claude-4-6-sonnet-latest",
-      max_tokens: 1024,
+      model: "claude-sonnet-4-5",
+      max_tokens: 512,
       system: systemPrompt,
       messages: formattedMessages,
     });
