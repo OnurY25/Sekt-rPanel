@@ -37,12 +37,17 @@ export default function LandingPage() {
       if (params.get('reset') === '1') {
         localStorage.clear();
         sessionStorage.clear();
-        // URL'den parametreyi temizle (sayfa yenilenmeden)
         window.history.replaceState({}, '', '/');
-        console.log('[Landing] Bozuk oturum temizlendi, giriş sayfası hazır.');
+        return;
+      }
+
+      // If not resetting, check if we should redirect to dashboard
+      const session = loadSession();
+      if (session && session.user?.id && session.tenant?.id) {
+        router.replace('/dashboard');
       }
     } catch {}
-  }, []);
+  }, [router]);
 
 
   const handleAuth = async (loginEmail?: string) => {

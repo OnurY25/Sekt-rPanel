@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import { useRouter } from 'next/navigation';
 import { useStore, loadSession, clearSession } from '@/lib/store';
 import Sidebar from '@/components/Sidebar';
 import Topbar from '@/components/Topbar';
@@ -11,35 +12,26 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   const { isAuthenticated, tenant, setAuth } = useStore();
   const [ready, setReady] = useState(false);
 
+  const router = useRouter();
+
   useEffect(() => {
-    // If already in memory (e.g. navigated from login page)
+    // If already in memory, we are good
     if (isAuthenticated && tenant) {
-      sessionStorage.removeItem('_dash_attempts');
       setReady(true);
       return;
     }
 
-    // Döngü tespiti: aynı sekmedeki yönlendirme sayısını takip et
-    const attempts = parseInt(sessionStorage.getItem('_dash_attempts') || '0', 10);
-    if (attempts >= 2) {
-      // Bozuk/döngüsel session → temizle ve giriş sayfasına yönlendir
-      console.warn('[Dashboard] Bozuk oturum tespit edildi, temizleniyor...');
-      sessionStorage.removeItem('_dash_attempts');
-      clearSession();
-      window.location.replace('/?reset=1');
-      return;
-    }
-    sessionStorage.setItem('_dash_attempts', String(attempts + 1));
-
     const session = loadSession();
-    if (session) {
+    if (session && session.user?.id && session.tenant?.id) {
+      // Sync store with session
       setAuth(session.user, session.tenant, session.token);
       setReady(true);
     } else {
+      // No valid session, go to login
       clearSession();
-      window.location.replace('/');
+      router.replace('/');
     }
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [isAuthenticated, tenant, setAuth, router]);
   // Note: [] is intentional — we only want to run this once on mount.
   // If isAuthenticated changes, the component will re-render and show the dashboard.
 
