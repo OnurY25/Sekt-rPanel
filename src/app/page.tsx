@@ -34,11 +34,11 @@ export default function LandingPage() {
   useEffect(() => {
     try {
       const session = loadSession();
-      if (session) {
-        router.replace('/dashboard');
+      if (session && session.user?.id && session.tenant?.id) {
+        window.location.href = '/dashboard';
       }
     } catch {}
-  }, []); // No router in deps — only run once on mount
+  }, []);
 
 
   const handleAuth = async (loginEmail?: string) => {

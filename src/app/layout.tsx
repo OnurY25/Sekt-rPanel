@@ -13,17 +13,6 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
       <head>
         <link rel="preconnect" href="https://fonts.googleapis.com" />
         <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="anonymous" />
-        {/* Force clear old corrupted session keys only once */}
-        <script dangerouslySetInnerHTML={{ __html: `
-          (function() {
-            const cleanupKey = 'sp_cleanup_v2';
-            if (!localStorage.getItem(cleanupKey)) {
-              console.log('Performing one-time storage cleanup...');
-              ['saas-store', 'saas_user', 'saas_tenant', 'saas_token'].forEach(k => localStorage.removeItem(k));
-              localStorage.setItem(cleanupKey, 'true');
-            }
-          })();
-        `}} />
       </head>
       <body>{children}</body>
     </html>

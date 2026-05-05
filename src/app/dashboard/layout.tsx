@@ -22,28 +22,23 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
 
     const checkSession = () => {
       try {
-        setDebugLog('Oturum bilgileri okunuyor...');
         const session = loadSession();
         
-        if (session && session.user && session.tenant) {
-          console.log('[Dashboard] Oturum doğrulandı:', session.user.email);
+        if (session && session.user?.id && session.tenant?.id) {
+          console.log('[Dashboard] Oturum doğrulandı.');
           setAuth(session.user, session.tenant, session.token);
           setReady(true);
         } else {
-          console.warn('[Dashboard] Oturum bulunamadı! Login sayfasına dönülüyor...');
-          setDebugLog('Oturum bulunamadı, giriş sayfasına yönlendiriliyorsunuz...');
-          // Nuclear redirect: bypass Next.js router
+          console.warn('[Dashboard] Oturum geçersiz.');
+          setDebugLog('Oturum geçersiz, yönlendiriliyorsunuz...');
           window.location.href = '/';
         }
-      } catch (err: any) {
-        console.error('[Dashboard] Kritik hata:', err);
-        setDebugLog('Sistem hatası: ' + err.message);
+      } catch (err) {
         window.location.href = '/';
       }
     };
 
-    // Small delay to ensure localStorage is ready and layout is stable
-    const timer = setTimeout(checkSession, 100);
+    const timer = setTimeout(checkSession, 300);
     return () => clearTimeout(timer);
   }, [isAuthenticated, tenant, setAuth]);
 

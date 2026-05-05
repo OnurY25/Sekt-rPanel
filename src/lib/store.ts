@@ -5,63 +5,51 @@ import {
   generateMockAppointments, generateMockTasks,
 } from '@/lib/mockData';
 
-// ─── Single session key ───────────────────────────────────────────────────────
 export const SESSION_KEY = 'saas_session';
 
 export type SessionData = { user: User; tenant: Tenant; token: string };
 
 export const saveSession = (user: User, tenant: Tenant, token: string) => {
-  try { localStorage.setItem(SESSION_KEY, JSON.stringify({ user, tenant, token })); } catch {}
+  try { 
+    if (!user || !tenant) return;
+    localStorage.setItem(SESSION_KEY, JSON.stringify({ user, tenant, token })); 
+  } catch (e) { console.error('Save session error:', e); }
 };
 
 export const loadSession = (): SessionData | null => {
   try {
-    // New format
     const raw = localStorage.getItem(SESSION_KEY);
     if (raw) {
       const d = JSON.parse(raw);
-      if (d?.user && d?.tenant) return d;
+      // STRICT CHECK: Must have both user and tenant with IDs
+      if (d && d.user?.id && d.tenant?.id && d.token) {
+        return d as SessionData;
+      }
     }
-    // Old format migration
+    
+    // Legacy/Old Format Migration (One time only)
     const u = localStorage.getItem('saas_user');
     const t = localStorage.getItem('saas_tenant');
     const tk = localStorage.getItem('saas_token');
     if (u && t && tk) {
       const user = JSON.parse(u);
       const tenant = JSON.parse(t);
-      if (user && tenant) {
+      if (user?.id && tenant?.id) {
         saveSession(user, tenant, tk);
-        localStorage.removeItem('saas_user');
-        localStorage.removeItem('saas_tenant');
-        localStorage.removeItem('saas_token');
+        ['saas_user', 'saas_tenant', 'saas_token', 'saas-store'].forEach(k => localStorage.removeItem(k));
         return { user, tenant, token: tk };
       }
     }
-    // Zustand persist format
-    const zp = localStorage.getItem('saas-store');
-    if (zp) {
-      const parsed = JSON.parse(zp);
-      const state = parsed?.state || parsed;
-      if (state?.user && state?.tenant && state?.token) {
-        saveSession(state.user, state.tenant, state.token);
-        return { user: state.user, tenant: state.tenant, token: state.token };
-      }
-    }
-  } catch {}
+  } catch (e) { console.error('Load session error:', e); }
   return null;
 };
 
 export const clearSession = () => {
   try {
-    localStorage.removeItem(SESSION_KEY);
-    localStorage.removeItem('saas_user');
-    localStorage.removeItem('saas_tenant');
-    localStorage.removeItem('saas_token');
-    localStorage.removeItem('saas-store');
-  } catch {}
+    ['saas_session', 'saas_user', 'saas_tenant', 'saas_token', 'saas-store'].forEach(k => localStorage.removeItem(k));
+  } catch (e) {}
 };
 
-// ─── Demo tenant IDs ──────────────────────────────────────────────────────────
 const DEMO_TENANT_IDS = ['t_terzi', 't_mobilya', 't_klinik', 't_matbaa', 't_servis', 't_admin'];
 
 const getDataForTenant = (tenantId: string) => {
@@ -105,14 +93,14 @@ interface AuthState {
   toggleSidebar: () => void;
   setSidebarOpen: (open: boolean) => void;
   addPayment: (payment: Payment) => void;
-  addOrder: (order: Order) => void;
-  updateOrder: (id: string, updates: Partial<Order>) => void;
-  addAppointment: (appointment: Appointment) => void;
-  updateAppointment: (id: string, updates: Partial<Appointment>) => void;
-  addTask: (task: Task) => void;
-  updateTask: (id: string, updates: Partial<Task>) => void;
-  addCustomer: (customer: Customer) => void;
-  updateCustomer: (id: string, updates: Partial<Customer>) => void;
+  addOrder: (o: Order) => void;
+  updateOrder: (id: string, u: Partial<Order>) => void;
+  addAppointment: (a: Appointment) => void;
+  updateAppointment: (id: string, u: Partial<Appointment>) => void;
+  addTask: (t: Task) => void;
+  updateTask: (id: string, u: Partial<Task>) => void;
+  addCustomer: (c: Customer) => void;
+  updateCustomer: (id: string, u: Partial<Customer>) => void;
   deleteCustomer: (id: string) => void;
 }
 
@@ -130,7 +118,7 @@ export const useStore = create<AuthState>((set) => ({
   tasks: [],
 
   setAuth: (user, tenant, token) => {
-    if (!user || !tenant) return;
+    if (!user?.id || !tenant?.id) return;
     saveSession(user, tenant, token);
     set({ user, tenant, token, isAuthenticated: true, ...getDataForTenant(tenant.id) });
   },
@@ -138,6 +126,7 @@ export const useStore = create<AuthState>((set) => ({
   logout: () => {
     clearSession();
     set({ user: null, tenant: null, token: null, isAuthenticated: false, orders: [], payments: [], customers: [], appointments: [], tasks: [] });
+    window.location.href = '/';
   },
 
   addNotification: (notif) => set((s) => ({
