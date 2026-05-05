@@ -6,11 +6,11 @@ import {
   generateMockAppointments, generateMockTasks,
 } from '@/lib/mockData';
 
-// ─── Demo tenant IDs ───────────────────────────────────────────────────────────
 const DEMO_TENANT_IDS = ['t_terzi', 't_mobilya', 't_klinik', 't_matbaa', 't_servis', 't_admin'];
 
 const getDataForTenant = (tenantId: string) => {
   const isDemoTenant = DEMO_TENANT_IDS.includes(tenantId);
+  const retag = (items: any[]) => items.map(i => ({ ...i, tenant_id: tenantId }));
   if (isDemoTenant) {
     return {
       orders: generateMockOrders().filter(o => o.tenant_id === tenantId),
@@ -20,8 +20,6 @@ const getDataForTenant = (tenantId: string) => {
       tasks: generateMockTasks().filter(t => t.tenant_id === tenantId),
     };
   }
-  // Real accounts: retag mock data with their tenant ID so dashboard looks populated
-  const retag = (items: any[]) => items.map(i => ({ ...i, tenant_id: tenantId }));
   return {
     orders: retag(generateMockOrders()),
     payments: retag(generateMockPayments()),
@@ -38,7 +36,6 @@ interface AuthState {
   isAuthenticated: boolean;
   notifications: Notification[];
   sidebarOpen: boolean;
-
   orders: Order[];
   payments: Payment[];
   customers: Customer[];
@@ -79,7 +76,7 @@ export const useStore = create<AuthState>()(
       tasks: [],
 
       setAuth: (user, tenant, token) => {
-        if (!user || !tenant) { console.error('[store] Invalid auth data'); return; }
+        if (!user || !tenant) return;
         set({ user, tenant, token, isAuthenticated: true, ...getDataForTenant(tenant.id) });
       },
 
@@ -88,42 +85,39 @@ export const useStore = create<AuthState>()(
         orders: [], payments: [], customers: [], appointments: [], tasks: [],
       }),
 
-      addNotification: (notif) => set((state) => ({
+      addNotification: (notif) => set((s) => ({
         notifications: [
           { ...notif, id: Math.random().toString(36).slice(2), created_at: new Date().toISOString(), read: false },
-          ...state.notifications,
+          ...s.notifications,
         ].slice(0, 50),
       })),
-
-      markAllRead: () => set((state) => ({
-        notifications: state.notifications.map(n => ({ ...n, read: true })),
-      })),
-
-      toggleSidebar: () => set((state) => ({ sidebarOpen: !state.sidebarOpen })),
+      markAllRead: () => set((s) => ({ notifications: s.notifications.map(n => ({ ...n, read: true })) })),
+      toggleSidebar: () => set((s) => ({ sidebarOpen: !s.sidebarOpen })),
       setSidebarOpen: (open) => set({ sidebarOpen: open }),
 
-      addPayment: (payment) => set((state) => {
-        const newOrders = state.orders.map(o => {
+      addPayment: (payment) => set((s) => {
+        const orders = s.orders.map(o => {
           if (o.id !== payment.order_id) return o;
           const bal = Math.max(0, (o.remaining_balance ?? o.price - o.deposit) - payment.amount);
           return { ...o, remaining_balance: bal, status: bal === 0 && o.status === 'in_progress' ? 'ready' as const : o.status };
         });
-        return { payments: [payment, ...state.payments], orders: newOrders };
+        return { payments: [payment, ...s.payments], orders };
       }),
 
-      addOrder: (order) => set((state) => ({ orders: [order, ...state.orders] })),
-      updateOrder: (id, updates) => set((state) => ({ orders: state.orders.map(o => o.id === id ? { ...o, ...updates } : o) })),
-      addAppointment: (a) => set((state) => ({ appointments: [a, ...state.appointments] })),
-      updateAppointment: (id, updates) => set((state) => ({ appointments: state.appointments.map(a => a.id === id ? { ...a, ...updates } : a) })),
-      addTask: (t) => set((state) => ({ tasks: [t, ...state.tasks] })),
-      updateTask: (id, updates) => set((state) => ({ tasks: state.tasks.map(t => t.id === id ? { ...t, ...updates } : t) })),
-      addCustomer: (c) => set((state) => ({ customers: [c, ...state.customers] })),
-      updateCustomer: (id, updates) => set((state) => ({ customers: state.customers.map(c => c.id === id ? { ...c, ...updates } : c) })),
-      deleteCustomer: (id) => set((state) => ({ customers: state.customers.filter(c => c.id !== id) })),
+      addOrder: (order) => set((s) => ({ orders: [order, ...s.orders] })),
+      updateOrder: (id, u) => set((s) => ({ orders: s.orders.map(o => o.id === id ? { ...o, ...u } : o) })),
+      addAppointment: (a) => set((s) => ({ appointments: [a, ...s.appointments] })),
+      updateAppointment: (id, u) => set((s) => ({ appointments: s.appointments.map(a => a.id === id ? { ...a, ...u } : a) })),
+      addTask: (t) => set((s) => ({ tasks: [t, ...s.tasks] })),
+      updateTask: (id, u) => set((s) => ({ tasks: s.tasks.map(t => t.id === id ? { ...t, ...u } : t) })),
+      addCustomer: (c) => set((s) => ({ customers: [c, ...s.customers] })),
+      updateCustomer: (id, u) => set((s) => ({ customers: s.customers.map(c => c.id === id ? { ...c, ...u } : c) })),
+      deleteCustomer: (id) => set((s) => ({ customers: s.customers.filter(c => c.id !== id) })),
     }),
     {
       name: 'saas-store',
       storage: createJSONStorage(() => localStorage),
+      version: 1,
       partialize: (state) => ({
         user: state.user,
         tenant: state.tenant,
@@ -131,11 +125,35 @@ export const useStore = create<AuthState>()(
         isAuthenticated: state.isAuthenticated,
         sidebarOpen: state.sidebarOpen,
       }),
-      // After hydration, repopulate data arrays using set() — NOT direct mutation
-      onRehydrateStorage: () => (state, error) => {
-        if (error) { console.error('[store] Hydration error:', error); return; }
+      // ── Migrate from old localStorage format (saas_user / saas_tenant / saas_token) ──
+      migrate: (persistedState: any) => {
+        // If we already have valid state in new format, use it
+        if (persistedState?.isAuthenticated && persistedState?.user) {
+          return persistedState;
+        }
+        // Try to read old format keys
+        try {
+          const oldUser   = localStorage.getItem('saas_user');
+          const oldTenant = localStorage.getItem('saas_tenant');
+          const oldToken  = localStorage.getItem('saas_token');
+          if (oldUser && oldTenant && oldToken) {
+            const user   = JSON.parse(oldUser);
+            const tenant = JSON.parse(oldTenant);
+            if (user && tenant) {
+              // Clean up old keys
+              localStorage.removeItem('saas_user');
+              localStorage.removeItem('saas_tenant');
+              localStorage.removeItem('saas_token');
+              return { user, tenant, token: oldToken, isAuthenticated: true, sidebarOpen: true };
+            }
+          }
+        } catch (e) {
+          console.warn('[store] Migration from old format failed:', e);
+        }
+        return persistedState ?? {};
+      },
+      onRehydrateStorage: () => (state) => {
         if (state?.isAuthenticated && state.tenant) {
-          // Use setTimeout so this runs after the store is fully initialized
           setTimeout(() => {
             useStore.setState(getDataForTenant(state.tenant!.id));
           }, 0);
