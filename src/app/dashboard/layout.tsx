@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useStore } from '@/lib/store';
 import Sidebar from '@/components/Sidebar';
@@ -9,29 +9,38 @@ import AIAssistant from '@/components/AIAssistant';
 import { getSectorConfig } from '@/lib/sectors';
 
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
-  const { isAuthenticated, tenant, _hasHydrated } = useStore();
+  const { isAuthenticated, tenant } = useStore();
   const router = useRouter();
 
+  // ── Mounted pattern: the ONLY reliable way with Next.js + Zustand persist ──
+  // Zustand rehydrates from localStorage synchronously AFTER the first client render.
+  // We must not make routing decisions until after the component has mounted (client-side).
+  const [mounted, setMounted] = useState(false);
+
   useEffect(() => {
-    // Only redirect AFTER Zustand persist has finished loading from localStorage
-    if (!_hasHydrated) return;
+    setMounted(true);
+  }, []);
+
+  useEffect(() => {
+    if (!mounted) return;
     if (!isAuthenticated) {
       router.replace('/');
     }
-  }, [_hasHydrated, isAuthenticated, router]);
+  }, [mounted, isAuthenticated, router]);
 
-  // Show spinner while waiting for localStorage hydration
-  if (!_hasHydrated) {
+  // While server-rendering or before client hydration: show spinner
+  if (!mounted) {
     return (
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100vh', background: 'var(--bg-primary)' }}>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100vh', background: '#050505' }}>
         <div style={{ width: '32px', height: '32px', border: '3px solid rgba(99,102,241,0.3)', borderTop: '3px solid #6366f1', borderRadius: '50%', animation: 'spin 0.8s linear infinite' }} />
       </div>
     );
   }
 
+  // After mount, if still not authenticated: redirecting (show spinner briefly)
   if (!isAuthenticated || !tenant) {
     return (
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100vh', background: 'var(--bg-primary)' }}>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100vh', background: '#050505' }}>
         <div style={{ width: '32px', height: '32px', border: '3px solid rgba(99,102,241,0.3)', borderTop: '3px solid #6366f1', borderRadius: '50%', animation: 'spin 0.8s linear infinite' }} />
       </div>
     );
@@ -40,11 +49,8 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   const config = getSectorConfig(tenant.sector);
   const sectorClass = `sector-${tenant.sector}`;
 
-  // Check Trial Expiration
   const isTrial = tenant.plan === 'trial';
   const trialEndsAt = tenant.trial_ends_at ? new Date(tenant.trial_ends_at) : null;
-  
-  // For new local mock registrations that don't have the date set yet, assume 5 days from now
   const expiryDate = trialEndsAt || new Date(Date.now() + 5 * 24 * 60 * 60 * 1000);
   const isExpired = isTrial && new Date() > expiryDate;
   const daysLeft = Math.ceil((expiryDate.getTime() - new Date().getTime()) / (1000 * 3600 * 24));
@@ -54,7 +60,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
       <Sidebar />
       <div className="main-content">
         <Topbar />
-        
+
         {isTrial && !isExpired && (
           <div style={{ background: 'linear-gradient(to right, rgba(99,102,241,0.1), rgba(168,85,247,0.1))', padding: '12px 24px', borderBottom: '1px solid rgba(99,102,241,0.2)', display: 'flex', justifyContent: 'center', alignItems: 'center', gap: '12px', fontSize: '13px', fontWeight: '500', color: '#e2e8f0' }}>
             <span style={{ color: '#a855f7' }}>✨ Deneme Sürümü:</span> Platformun tüm özelliklerini kullanmak için {daysLeft} gününüz kaldı.
@@ -70,7 +76,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
               </div>
               <h2 style={{ fontSize: '28px', fontWeight: '800', marginBottom: '16px' }}>Deneme Süreniz Doldu</h2>
               <p style={{ color: 'var(--text-muted)', maxWidth: '400px', lineHeight: 1.6, marginBottom: '32px' }}>
-                Platformu kullanmaya devam etmek ve işlerinizi büyütmek için profesyonel planlardan birine geçiş yapın.
+                Platformu kullanmaya devam etmek için profesyonel planlardan birine geçiş yapın.
               </p>
               <a href="/dashboard/subscription" className="btn btn-primary" style={{ padding: '14px 32px', fontSize: '16px', background: 'linear-gradient(135deg, #6366f1, #8b5cf6)', color: 'white', textDecoration: 'none', borderRadius: '12px' }}>
                 Planları İncele
@@ -80,7 +86,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
             children
           )}
         </main>
-        
+
         {!isExpired && <AIAssistant />}
       </div>
     </div>
