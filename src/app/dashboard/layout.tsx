@@ -9,7 +9,7 @@ import AIAssistant from '@/components/AIAssistant';
 import { getSectorConfig } from '@/lib/sectors';
 
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
-  const { isAuthenticated, tenant } = useStore();
+  const { isAuthenticated, tenant, setAuth } = useStore();
   const router = useRouter();
 
   useEffect(() => {
