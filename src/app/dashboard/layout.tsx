@@ -14,20 +14,30 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   useEffect(() => {
     // If already in memory (e.g. navigated from login page)
     if (isAuthenticated && tenant) {
+      sessionStorage.removeItem('_dash_attempts');
       setReady(true);
       return;
     }
 
-    // Middleware already verified the cookie — now load full session from localStorage
+    // Döngü tespiti: aynı sekmedeki yönlendirme sayısını takip et
+    const attempts = parseInt(sessionStorage.getItem('_dash_attempts') || '0', 10);
+    if (attempts >= 2) {
+      // Bozuk/döngüsel session → temizle ve giriş sayfasına yönlendir
+      console.warn('[Dashboard] Bozuk oturum tespit edildi, temizleniyor...');
+      sessionStorage.removeItem('_dash_attempts');
+      clearSession();
+      window.location.replace('/?reset=1');
+      return;
+    }
+    sessionStorage.setItem('_dash_attempts', String(attempts + 1));
+
     const session = loadSession();
     if (session) {
       setAuth(session.user, session.tenant, session.token);
       setReady(true);
     } else {
-      // Cookie existed but localStorage is empty (e.g. different device/cleared storage)
-      // Clear the stale cookie and let middleware redirect on next request
       clearSession();
-      window.location.href = '/';
+      window.location.replace('/');
     }
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
   // Note: [] is intentional — we only want to run this once on mount.

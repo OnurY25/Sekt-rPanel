@@ -30,8 +30,19 @@ export default function LandingPage() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
 
-  // Note: Middleware handles redirect to /dashboard if already authenticated (cookie-based)
-  // No client-side check needed here.
+  // ?reset=1 ile gelinirse (döngü tespiti sonrası) oturumu tamamen temizle
+  useEffect(() => {
+    try {
+      const params = new URLSearchParams(window.location.search);
+      if (params.get('reset') === '1') {
+        localStorage.clear();
+        sessionStorage.clear();
+        // URL'den parametreyi temizle (sayfa yenilenmeden)
+        window.history.replaceState({}, '', '/');
+        console.log('[Landing] Bozuk oturum temizlendi, giriş sayfası hazır.');
+      }
+    } catch {}
+  }, []);
 
 
   const handleAuth = async (loginEmail?: string) => {
