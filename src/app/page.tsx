@@ -85,7 +85,7 @@ export default function LandingPage() {
           language: 'tr',
         };
         setAuth(newUser, newTenant, 'supabase-secure-session');
-        router.push('/dashboard');
+        window.location.href = '/dashboard';
         return;
       }
 
@@ -118,7 +118,7 @@ export default function LandingPage() {
         language: 'tr',
       };
       setAuth(loggedUser, loggedTenant, 'supabase-secure-session');
-      router.push('/dashboard');
+      window.location.href = '/dashboard';
     } catch (err: any) {
       console.error('Auth error:', err);
       setError('Beklenmeyen bir hata oluştu. Lütfen tekrar deneyin.');
