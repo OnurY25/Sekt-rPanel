@@ -5,15 +5,29 @@ import {
   generateMockAppointments, generateMockTasks,
 } from '@/lib/mockData';
 
+// ─── Cookie helpers (client-side only) ───────────────────────────────────────
+export const AUTH_COOKIE = 'saas_auth';
 export const SESSION_KEY = 'saas_session';
 
+const setAuthCookie = () => {
+  const expires = new Date(Date.now() + 7 * 86400000).toUTCString();
+  document.cookie = `${AUTH_COOKIE}=1; path=/; expires=${expires}; SameSite=Strict`;
+};
+
+const clearAuthCookie = () => {
+  document.cookie = `${AUTH_COOKIE}=; path=/; expires=Thu, 01 Jan 1970 00:00:00 GMT; SameSite=Strict`;
+};
+
+// ─── Session helpers ──────────────────────────────────────────────────────────
 export type SessionData = { user: User; tenant: Tenant; token: string };
 
 export const saveSession = (user: User, tenant: Tenant, token: string) => {
-  try { 
-    if (!user || !tenant) return;
-    localStorage.setItem(SESSION_KEY, JSON.stringify({ user, tenant, token })); 
-  } catch (e) { console.error('Save session error:', e); }
+  try {
+    localStorage.setItem(SESSION_KEY, JSON.stringify({ user, tenant, token }));
+    setAuthCookie();
+  } catch (e) {
+    console.error('[session] save error:', e);
+  }
 };
 
 export const loadSession = (): SessionData | null => {
@@ -21,41 +35,28 @@ export const loadSession = (): SessionData | null => {
     const raw = localStorage.getItem(SESSION_KEY);
     if (raw) {
       const d = JSON.parse(raw);
-      // STRICT CHECK: Must have both user and tenant with IDs
-      if (d && d.user?.id && d.tenant?.id && d.token) {
-        return d as SessionData;
-      }
+      if (d?.user?.id && d?.tenant?.id) return d as SessionData;
     }
-    
-    // Legacy/Old Format Migration (One time only)
-    const u = localStorage.getItem('saas_user');
-    const t = localStorage.getItem('saas_tenant');
-    const tk = localStorage.getItem('saas_token');
-    if (u && t && tk) {
-      const user = JSON.parse(u);
-      const tenant = JSON.parse(t);
-      if (user?.id && tenant?.id) {
-        saveSession(user, tenant, tk);
-        ['saas_user', 'saas_tenant', 'saas_token', 'saas-store'].forEach(k => localStorage.removeItem(k));
-        return { user, tenant, token: tk };
-      }
-    }
-  } catch (e) { console.error('Load session error:', e); }
+  } catch (e) {
+    console.error('[session] load error:', e);
+  }
   return null;
 };
 
 export const clearSession = () => {
   try {
-    ['saas_session', 'saas_user', 'saas_tenant', 'saas_token', 'saas-store'].forEach(k => localStorage.removeItem(k));
-  } catch (e) {}
+    localStorage.removeItem(SESSION_KEY);
+    clearAuthCookie();
+  } catch {}
 };
 
+// ─── Mock data ────────────────────────────────────────────────────────────────
 const DEMO_TENANT_IDS = ['t_terzi', 't_mobilya', 't_klinik', 't_matbaa', 't_servis', 't_admin'];
 
 const getDataForTenant = (tenantId: string) => {
-  const isDemoTenant = DEMO_TENANT_IDS.includes(tenantId);
+  const isDemo = DEMO_TENANT_IDS.includes(tenantId);
   const retag = (items: any[]) => items.map(i => ({ ...i, tenant_id: tenantId }));
-  if (isDemoTenant) {
+  if (isDemo) {
     return {
       orders: generateMockOrders().filter(o => o.tenant_id === tenantId),
       payments: generateMockPayments().filter(p => p.tenant_id === tenantId),
@@ -73,6 +74,7 @@ const getDataForTenant = (tenantId: string) => {
   };
 };
 
+// ─── Store ────────────────────────────────────────────────────────────────────
 interface AuthState {
   user: User | null;
   tenant: Tenant | null;
@@ -88,11 +90,11 @@ interface AuthState {
 
   setAuth: (user: User, tenant: Tenant, token: string) => void;
   logout: () => void;
-  addNotification: (notif: Omit<Notification, 'id' | 'created_at' | 'read'>) => void;
+  addNotification: (n: Omit<Notification, 'id' | 'created_at' | 'read'>) => void;
   markAllRead: () => void;
   toggleSidebar: () => void;
-  setSidebarOpen: (open: boolean) => void;
-  addPayment: (payment: Payment) => void;
+  setSidebarOpen: (o: boolean) => void;
+  addPayment: (p: Payment) => void;
   addOrder: (o: Order) => void;
   updateOrder: (id: string, u: Partial<Order>) => void;
   addAppointment: (a: Appointment) => void;
@@ -105,20 +107,12 @@ interface AuthState {
 }
 
 export const useStore = create<AuthState>((set) => ({
-  user: null,
-  tenant: null,
-  token: null,
-  isAuthenticated: false,
-  notifications: [],
-  sidebarOpen: true,
-  orders: [],
-  payments: [],
-  customers: [],
-  appointments: [],
-  tasks: [],
+  user: null, tenant: null, token: null, isAuthenticated: false,
+  notifications: [], sidebarOpen: true,
+  orders: [], payments: [], customers: [], appointments: [], tasks: [],
 
   setAuth: (user, tenant, token) => {
-    if (!user?.id || !tenant?.id) return;
+    if (!user?.id || !tenant?.id) { console.error('[store] setAuth: invalid user/tenant'); return; }
     saveSession(user, tenant, token);
     set({ user, tenant, token, isAuthenticated: true, ...getDataForTenant(tenant.id) });
   },
@@ -129,12 +123,12 @@ export const useStore = create<AuthState>((set) => ({
     window.location.href = '/';
   },
 
-  addNotification: (notif) => set((s) => ({
-    notifications: [{ ...notif, id: Math.random().toString(36).slice(2), created_at: new Date().toISOString(), read: false }, ...s.notifications].slice(0, 50),
+  addNotification: (n) => set((s) => ({
+    notifications: [{ ...n, id: Math.random().toString(36).slice(2), created_at: new Date().toISOString(), read: false }, ...s.notifications].slice(0, 50),
   })),
   markAllRead: () => set((s) => ({ notifications: s.notifications.map(n => ({ ...n, read: true })) })),
   toggleSidebar: () => set((s) => ({ sidebarOpen: !s.sidebarOpen })),
-  setSidebarOpen: (open) => set({ sidebarOpen: open }),
+  setSidebarOpen: (o) => set({ sidebarOpen: o }),
 
   addPayment: (payment) => set((s) => {
     const orders = s.orders.map(o => {
@@ -144,7 +138,6 @@ export const useStore = create<AuthState>((set) => ({
     });
     return { payments: [payment, ...s.payments], orders };
   }),
-
   addOrder: (o) => set((s) => ({ orders: [o, ...s.orders] })),
   updateOrder: (id, u) => set((s) => ({ orders: s.orders.map(o => o.id === id ? { ...o, ...u } : o) })),
   addAppointment: (a) => set((s) => ({ appointments: [a, ...s.appointments] })),

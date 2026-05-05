@@ -30,15 +30,8 @@ export default function LandingPage() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
 
-  // Auto-redirect if already authenticated (uses same source of truth as DashboardLayout)
-  useEffect(() => {
-    try {
-      const session = loadSession();
-      if (session && session.user?.id && session.tenant?.id) {
-        window.location.href = '/dashboard';
-      }
-    } catch {}
-  }, []);
+  // Note: Middleware handles redirect to /dashboard if already authenticated (cookie-based)
+  // No client-side check needed here.
 
 
   const handleAuth = async (loginEmail?: string) => {

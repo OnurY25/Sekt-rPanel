@@ -2,57 +2,65 @@ import { createServerClient, type CookieOptions } from '@supabase/ssr';
 import { NextResponse, type NextRequest } from 'next/server';
 
 export async function proxy(request: NextRequest) {
-  let supabaseResponse = NextResponse.next({
-    request,
-  });
+  const { pathname } = request.nextUrl;
+  const isDashboard = pathname.startsWith('/dashboard');
+  const isRoot = pathname === '/';
 
-  // Bypass if no Supabase environment variables are set (allows demo to work)
-  if (!process.env.NEXT_PUBLIC_SUPABASE_URL || !process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY) {
+  let supabaseResponse = NextResponse.next({ request });
+
+  // ── Case 1: Supabase IS configured → use Supabase session ────────────────
+  if (process.env.NEXT_PUBLIC_SUPABASE_URL && process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY) {
+    const supabase = createServerClient(
+      process.env.NEXT_PUBLIC_SUPABASE_URL!,
+      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+      {
+        cookies: {
+          get(name: string) { return request.cookies.get(name)?.value; },
+          set(name: string, value: string, options: CookieOptions) {
+            request.cookies.set({ name, value, ...options });
+            supabaseResponse = NextResponse.next({ request: { headers: request.headers } });
+            supabaseResponse.cookies.set({ name, value, ...options });
+          },
+          remove(name: string, options: CookieOptions) {
+            request.cookies.set({ name, value: '', ...options });
+            supabaseResponse = NextResponse.next({ request: { headers: request.headers } });
+            supabaseResponse.cookies.set({ name, value: '', ...options });
+          },
+        },
+      }
+    );
+
+    const { data: { user } } = await supabase.auth.getUser();
+
+    // Check our custom cookie as fallback (for demo accounts not in Supabase)
+    const hasCustomAuth = request.cookies.get('saas_auth')?.value === '1';
+    const isAuthenticated = !!user || hasCustomAuth;
+
+    if (!isAuthenticated && isDashboard) {
+      const url = request.nextUrl.clone();
+      url.pathname = '/';
+      return NextResponse.redirect(url);
+    }
+
+    if (isAuthenticated && isRoot) {
+      const url = request.nextUrl.clone();
+      url.pathname = '/dashboard';
+      return NextResponse.redirect(url);
+    }
+
     return supabaseResponse;
   }
 
-  const supabase = createServerClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-    {
-      cookies: {
-        get(name: string) {
-          return request.cookies.get(name)?.value;
-        },
-        set(name: string, value: string, options: CookieOptions) {
-          request.cookies.set({ name, value, ...options });
-          supabaseResponse = NextResponse.next({
-            request: { headers: request.headers },
-          });
-          supabaseResponse.cookies.set({ name, value, ...options });
-        },
-        remove(name: string, options: CookieOptions) {
-          request.cookies.set({ name, value: '', ...options });
-          supabaseResponse = NextResponse.next({
-            request: { headers: request.headers },
-          });
-          supabaseResponse.cookies.set({ name, value: '', ...options });
-        },
-      },
-    }
-  );
+  // ── Case 2: No Supabase → use only our custom cookie ─────────────────────
+  const hasCustomAuth = request.cookies.get('saas_auth')?.value === '1';
 
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-
-  const isAuthPage = request.nextUrl.pathname === '/';
-  const isDashboard = request.nextUrl.pathname.startsWith('/dashboard');
-
-  // If user is not logged in and tries to access dashboard, redirect to login
-  if (!user && isDashboard) {
+  if (!hasCustomAuth && isDashboard) {
     const url = request.nextUrl.clone();
     url.pathname = '/';
     return NextResponse.redirect(url);
   }
 
-  // If user is logged in and tries to access login page, redirect to dashboard
-  if (user && isAuthPage) {
+  if (hasCustomAuth && isRoot) {
     const url = request.nextUrl.clone();
     url.pathname = '/dashboard';
     return NextResponse.redirect(url);
@@ -63,13 +71,6 @@ export async function proxy(request: NextRequest) {
 
 export const config = {
   matcher: [
-    /*
-     * Match all request paths except for the ones starting with:
-     * - _next/static (static files)
-     * - _next/image (image optimization files)
-     * - favicon.ico (favicon file)
-     * Feel free to modify this pattern to include more paths.
-     */
     '/((?!_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)',
   ],
 };
