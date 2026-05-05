@@ -23,7 +23,12 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
           if (stored_user && stored_tenant && stored_token) {
             const user = JSON.parse(stored_user);
             const tenant = JSON.parse(stored_tenant);
-            setAuth(user, tenant, stored_token);
+            
+            if (user && tenant && stored_token) {
+              setAuth(user, tenant, stored_token);
+            } else {
+              router.replace('/');
+            }
           } else {
             router.replace('/');
           }

@@ -52,6 +52,11 @@ export const useStore = create<AuthState>((set) => ({
   tasks: generateMockTasks(),
 
   setAuth: (user, tenant, token) => {
+    if (!user || !tenant) {
+      console.error('Invalid auth data provided to setAuth');
+      return;
+    }
+    
     if (typeof window !== 'undefined') {
       localStorage.setItem('saas_token', token);
       localStorage.setItem('saas_user', JSON.stringify(user));
