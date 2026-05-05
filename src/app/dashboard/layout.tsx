@@ -10,56 +10,52 @@ import { getSectorConfig } from '@/lib/sectors';
 
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
   const { isAuthenticated, tenant, setAuth } = useStore();
-  const router = useRouter();
   const [ready, setReady] = useState(false);
-  const [debugLog, setDebugLog] = useState('Başlatılıyor...');
+  const [debugLog, setDebugLog] = useState('Sistem başlatılıyor...');
 
   useEffect(() => {
-    console.log('[Dashboard] Mount oldu. Auth durumu:', isAuthenticated);
-    setDebugLog('Oturum kontrol ediliyor...');
-
-    // 1. Zaten bellekte varsa hemen hazırız
+    // Already authenticated in memory
     if (isAuthenticated && tenant) {
-      console.log('[Dashboard] Bellekte oturum bulundu.');
       setReady(true);
       return;
     }
 
-    // 2. Bellekte yoksa localStorage'dan yükle
-    try {
-      const session = loadSession();
-      if (session && session.user && session.tenant) {
-        console.log('[Dashboard] LocalStorage oturumu yüklendi:', session.user.email);
-        setAuth(session.user, session.tenant, session.token);
-        setReady(true);
-      } else {
-        console.log('[Dashboard] Oturum bulunamadı, ana sayfaya yönlendiriliyor...');
-        setDebugLog('Oturum bulunamadı, yönlendiriliyor...');
-        router.replace('/');
+    const checkSession = () => {
+      try {
+        setDebugLog('Oturum bilgileri okunuyor...');
+        const session = loadSession();
+        
+        if (session && session.user && session.tenant) {
+          console.log('[Dashboard] Oturum doğrulandı:', session.user.email);
+          setAuth(session.user, session.tenant, session.token);
+          setReady(true);
+        } else {
+          console.warn('[Dashboard] Oturum bulunamadı! Login sayfasına dönülüyor...');
+          setDebugLog('Oturum bulunamadı, giriş sayfasına yönlendiriliyorsunuz...');
+          // Nuclear redirect: bypass Next.js router
+          window.location.href = '/';
+        }
+      } catch (err: any) {
+        console.error('[Dashboard] Kritik hata:', err);
+        setDebugLog('Sistem hatası: ' + err.message);
+        window.location.href = '/';
       }
-    } catch (err) {
-      console.error('[Dashboard] Yükleme hatası:', err);
-      setDebugLog('Hata oluştu, ana sayfaya dönülüyor...');
-      router.replace('/');
-    }
+    };
 
-    // 3. Emniyet kilidi: 5 saniye sonra hala hazır değilse ana sayfaya at
-    const timer = setTimeout(() => {
-      if (!isAuthenticated) {
-        console.warn('[Dashboard] Zaman aşımı! Yönlendiriliyor...');
-        router.replace('/');
-      }
-    }, 5000);
-
+    // Small delay to ensure localStorage is ready and layout is stable
+    const timer = setTimeout(checkSession, 100);
     return () => clearTimeout(timer);
-  }, [isAuthenticated, tenant, router, setAuth]);
+  }, [isAuthenticated, tenant, setAuth]);
 
-  // Yükleme ekranı
+  // Loading Screen
   if (!ready || !isAuthenticated || !tenant) {
     return (
-      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '100vh', background: '#050505', color: 'white', gap: '20px' }}>
-        <div style={{ width: '40px', height: '40px', border: '3px solid rgba(99,102,241,0.3)', borderTop: '3px solid #6366f1', borderRadius: '50%', animation: 'spin 0.8s linear infinite' }} />
-        <p style={{ fontSize: '14px', color: '#64748b' }}>{debugLog}</p>
+      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '100vh', background: '#050505', color: 'white', gap: '20px', fontFamily: 'Inter, sans-serif' }}>
+        <div style={{ width: '40px', height: '40px', border: '3px solid rgba(99,102,241,0.1)', borderTop: '3px solid #6366f1', borderRadius: '50%', animation: 'spin 1s linear infinite' }} />
+        <div style={{ textAlign: 'center' }}>
+          <p style={{ fontSize: '16px', fontWeight: '500', marginBottom: '8px', color: '#e2e8f0' }}>Lütfen Bekleyin</p>
+          <p style={{ fontSize: '13px', color: '#64748b' }}>{debugLog}</p>
+        </div>
         <style>{`@keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }`}</style>
       </div>
     );
@@ -81,7 +77,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
         <Topbar />
 
         {isTrial && !isExpired && (
-          <div style={{ background: 'linear-gradient(to right, rgba(99,102,241,0.1), rgba(168,85,247,0.1))', padding: '12px 24px', borderBottom: '1px solid rgba(99,102,241,0.2)', display: 'flex', justifyContent: 'center', alignItems: 'center', gap: '12px', fontSize: '13px', fontWeight: '500', color: '#e2e8f0' }}>
+          <div style={{ background: 'linear-gradient(to right, rgba(99,102,241,0.05), rgba(168,85,247,0.05))', padding: '12px 24px', borderBottom: '1px solid rgba(99,102,241,0.1)', display: 'flex', justifyContent: 'center', alignItems: 'center', gap: '12px', fontSize: '13px', fontWeight: '500', color: '#e2e8f0' }}>
             <span style={{ color: '#a855f7' }}>✨ Deneme Sürümü:</span> {daysLeft} gününüz kaldı.
             <a href="/dashboard/subscription" style={{ color: '#818cf8', textDecoration: 'underline', fontWeight: '600' }}>Hemen Yükselt</a>
           </div>
@@ -92,14 +88,13 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
             <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '100%', textAlign: 'center', padding: '40px' }}>
               <div style={{ width: '80px', height: '80px', borderRadius: '24px', background: 'rgba(239,68,68,0.1)', color: '#ef4444', display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: '24px', fontSize: '32px' }}>⏳</div>
               <h2 style={{ fontSize: '28px', fontWeight: '800', marginBottom: '16px' }}>Deneme Süreniz Doldu</h2>
-              <p style={{ color: 'var(--text-muted)', maxWidth: '400px', lineHeight: 1.6, marginBottom: '32px' }}>Platformu kullanmaya devam etmek için profesyonel planlardan birine geçiş yapın.</p>
-              <a href="/dashboard/subscription" className="btn btn-primary" style={{ padding: '14px 32px', fontSize: '16px', background: 'linear-gradient(135deg, #6366f1, #8b5cf6)', color: 'white', textDecoration: 'none', borderRadius: '12px' }}>Planları İncele</a>
+              <p style={{ color: 'var(--text-muted)', maxWidth: '400px', marginBottom: '32px' }}>Platformu kullanmaya devam etmek için profesyonel planlardan birine geçiş yapın.</p>
+              <a href="/dashboard/subscription" className="btn btn-primary" style={{ padding: '14px 32px', background: 'linear-gradient(135deg, #6366f1, #8b5cf6)', color: 'white', borderRadius: '12px' }}>Planları İncele</a>
             </div>
           ) : (
             children
           )}
         </main>
-
         {!isExpired && <AIAssistant />}
       </div>
     </div>
