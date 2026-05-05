@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
-import { useStore } from '@/lib/store';
+import { useStore, loadSession } from '@/lib/store';
 import { MOCK_TENANTS } from '@/lib/mockData';
 import { loginAction } from '@/app/actions/auth';
 import { User, Tenant } from '@/types';
@@ -30,13 +30,16 @@ export default function LandingPage() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
 
-  // Auto-redirect if already authenticated (for F5 on landing page)
+  // Auto-redirect if already authenticated (uses same source of truth as DashboardLayout)
   useEffect(() => {
-    const stored_token = localStorage.getItem('saas_token');
-    if (stored_token) {
-      router.replace('/dashboard');
-    }
-  }, [router]);
+    try {
+      const session = loadSession();
+      if (session) {
+        router.replace('/dashboard');
+      }
+    } catch {}
+  }, []); // No router in deps — only run once on mount
+
 
   const handleAuth = async (loginEmail?: string) => {
     const e = loginEmail || email;
