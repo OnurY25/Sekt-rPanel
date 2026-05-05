@@ -62,19 +62,17 @@ export default function LandingPage() {
     try {
       // ── REGISTER FLOW ──────────────────────────────────────────────
       if (isRegister && !loginEmail) {
-        if (!companyName) { setError('Lütfen işletme adınızı girin.'); setLoading(false); return; }
-        if (password.length < 6) { setError('Şifre en az 6 karakter olmalıdır.'); setLoading(false); return; }
+        if (!companyName) { setError('Lütfen işletme adınızı girin.'); return; }
+        if (password.length < 6) { setError('Şifre en az 6 karakter olmalıdır.'); return; }
 
         const { registerAction } = await import('@/app/actions/auth');
         const res = await registerAction(e, password, companyName, sector);
 
         if ('error' in res) {
           setError(res.error);
-          setLoading(false);
           return;
         }
 
-        // Build user & tenant from plain data returned by server action
         const newUser: User = {
           id: res.userId,
           tenant_id: res.userId + '-tenant',
@@ -94,7 +92,7 @@ export default function LandingPage() {
           language: 'tr',
         };
         setAuth(newUser, newTenant, 'supabase-secure-session');
-        window.location.href = '/dashboard';
+        router.replace('/dashboard');
         return;
       }
 
@@ -103,7 +101,6 @@ export default function LandingPage() {
 
       if ('error' in res) {
         setError(res.error);
-        setLoading(false);
         return;
       }
 
@@ -127,10 +124,11 @@ export default function LandingPage() {
         language: 'tr',
       };
       setAuth(loggedUser, loggedTenant, 'supabase-secure-session');
-      window.location.href = '/dashboard';
+      router.replace('/dashboard');
     } catch (err: any) {
       console.error('Auth error:', err);
       setError('Beklenmeyen bir hata oluştu. Lütfen tekrar deneyin.');
+    } finally {
       setLoading(false);
     }
   };
