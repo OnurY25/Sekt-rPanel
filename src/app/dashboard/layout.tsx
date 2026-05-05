@@ -9,19 +9,25 @@ import AIAssistant from '@/components/AIAssistant';
 import { getSectorConfig } from '@/lib/sectors';
 
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
-  const { isAuthenticated, tenant } = useStore();
+  const { isAuthenticated, tenant, _hasHydrated } = useStore();
   const router = useRouter();
 
   useEffect(() => {
-    // Zustand persist handles rehydration automatically.
-    // This effect only redirects if after hydration the user is still not authenticated.
-    const timer = setTimeout(() => {
-      if (!isAuthenticated) {
-        router.replace('/');
-      }
-    }, 300); // Small delay to allow zustand to rehydrate from localStorage
-    return () => clearTimeout(timer);
-  }, [isAuthenticated, router]);
+    // Only redirect AFTER Zustand persist has finished loading from localStorage
+    if (!_hasHydrated) return;
+    if (!isAuthenticated) {
+      router.replace('/');
+    }
+  }, [_hasHydrated, isAuthenticated, router]);
+
+  // Show spinner while waiting for localStorage hydration
+  if (!_hasHydrated) {
+    return (
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100vh', background: 'var(--bg-primary)' }}>
+        <div style={{ width: '32px', height: '32px', border: '3px solid rgba(99,102,241,0.3)', borderTop: '3px solid #6366f1', borderRadius: '50%', animation: 'spin 0.8s linear infinite' }} />
+      </div>
+    );
+  }
 
   if (!isAuthenticated || !tenant) {
     return (

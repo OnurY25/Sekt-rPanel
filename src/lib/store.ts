@@ -37,6 +37,8 @@ interface AuthState {
   tenant: Tenant | null;
   token: string | null;
   isAuthenticated: boolean;
+  _hasHydrated: boolean;
+  setHasHydrated: (val: boolean) => void;
   notifications: Notification[];
   sidebarOpen: boolean;
 
@@ -74,6 +76,8 @@ export const useStore = create<AuthState>()(
       tenant: null,
       token: null,
       isAuthenticated: false,
+      _hasHydrated: false,
+      setHasHydrated: (val) => set({ _hasHydrated: val }),
       notifications: [],
       sidebarOpen: true,
 
@@ -186,15 +190,18 @@ export const useStore = create<AuthState>()(
         isAuthenticated: state.isAuthenticated,
         sidebarOpen: state.sidebarOpen,
       }),
-      // After hydration, if authenticated, repopulate data arrays from mock
+      // After hydration completes, mark store as ready and repopulate data arrays
       onRehydrateStorage: () => (state) => {
-        if (state?.isAuthenticated && state.tenant) {
-          const data = getDataForTenant(state.tenant.id);
-          state.orders = data.orders;
-          state.payments = data.payments;
-          state.customers = data.customers;
-          state.appointments = data.appointments;
-          state.tasks = data.tasks;
+        if (state) {
+          state._hasHydrated = true;
+          if (state.isAuthenticated && state.tenant) {
+            const data = getDataForTenant(state.tenant.id);
+            state.orders = data.orders;
+            state.payments = data.payments;
+            state.customers = data.customers;
+            state.appointments = data.appointments;
+            state.tasks = data.tasks;
+          }
         }
       },
     }
