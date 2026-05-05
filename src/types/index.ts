@@ -65,7 +65,7 @@ export interface Order {
   id: string;
   tenant_id: string;
   customer_id: string;
-  customer?: { id: string; name: string };
+  customer?: { id: string; name: string; phone?: string };
   title: string;
   status: OrderStatus;
   price: number;
@@ -83,7 +83,7 @@ export interface Payment {
   order_id?: string;
   order?: { id: string; title: string };
   customer_id: string;
-  customer?: { id: string; name: string };
+  customer?: { id: string; name: string; phone?: string };
   amount: number;
   type: PaymentType;
   paid_at: string;
@@ -94,7 +94,7 @@ export interface Appointment {
   id: string;
   tenant_id: string;
   customer_id: string;
-  customer?: { id: string; name: string };
+  customer?: { id: string; name: string; phone?: string };
   date: string;
   time?: string;
   status: AppointmentStatus;
