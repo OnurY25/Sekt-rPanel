@@ -42,124 +42,75 @@ export default function LandingPage() {
     try {
       // ── REGISTER FLOW ──────────────────────────────────────────────
       if (isRegister && !loginEmail) {
-        if (!companyName) {
-          setError('Lütfen işletme adınızı girin.');
-          setLoading(false);
-          return;
-        }
-        if (password.length < 6) {
-          setError('Şifre en az 6 karakter olmalıdır.');
-          setLoading(false);
-          return;
-        }
+        if (!companyName) { setError('Lütfen işletme adınızı girin.'); setLoading(false); return; }
+        if (password.length < 6) { setError('Şifre en az 6 karakter olmalıdır.'); setLoading(false); return; }
 
         const { registerAction } = await import('@/app/actions/auth');
         const res = await registerAction(e, password, companyName, sector);
 
-        if (res.error) {
-          // If already registered, try logging in directly
-          if (res.error.includes('zaten sistemimizde kayıtlı')) {
-            const loginRes = await loginAction(e, password);
-            if (loginRes.success && loginRes.user) {
-              const existingTenant: Tenant = {
-                id: loginRes.profile?.tenant_id || 'existing-tenant',
-                company_name: loginRes.profile?.name || companyName,
-                sector: sector as any,
-                plan: 'trial' as any,
-                status: 'active',
-                created_at: new Date().toISOString(),
-                currency: 'TRY',
-                language: 'tr',
-              };
-              const existingUser: User = {
-                id: loginRes.user.id,
-                tenant_id: existingTenant.id,
-                name: loginRes.profile?.name || companyName + ' Yöneticisi',
-                email: e,
-                role: 'owner',
-                created_at: new Date().toISOString(),
-              };
-              setAuth(existingUser, existingTenant, 'supabase-secure-session');
-              router.push('/dashboard');
-              return;
-            }
-          }
+        if ('error' in res) {
           setError(res.error);
           setLoading(false);
           return;
         }
 
-        // Registration successful — build user/tenant from registration data directly
-        if (res.success && res.user) {
-          const newTenant: Tenant = {
-            id: res.user.id + '-tenant',
-            company_name: companyName,
-            sector: sector as any,
-            plan: 'trial' as any,
-            status: 'active',
-            created_at: new Date().toISOString(),
-            currency: 'TRY',
-            language: 'tr',
-          };
-          const newUser: User = {
-            id: res.user.id,
-            tenant_id: newTenant.id,
-            name: companyName + ' Yöneticisi',
-            email: e,
-            role: 'owner',
-            created_at: new Date().toISOString(),
-          };
-          setAuth(newUser, newTenant, 'supabase-secure-session');
-          router.push('/dashboard');
-          return;
-        }
+        // Build user & tenant from plain data returned by server action
+        const newUser: User = {
+          id: res.userId,
+          tenant_id: res.userId + '-tenant',
+          name: res.companyName + ' Yöneticisi',
+          email: res.email,
+          role: 'owner',
+          created_at: new Date().toISOString(),
+        };
+        const newTenant: Tenant = {
+          id: res.userId + '-tenant',
+          company_name: res.companyName,
+          sector: res.sector as any,
+          plan: 'trial' as any,
+          status: 'active',
+          created_at: new Date().toISOString(),
+          currency: 'TRY',
+          language: 'tr',
+        };
+        setAuth(newUser, newTenant, 'supabase-secure-session');
+        router.push('/dashboard');
+        return;
       }
 
       // ── LOGIN FLOW ─────────────────────────────────────────────────
-      const result = await loginAction(e, password || 'Demo1234!');
-      
-      if (result.error) {
-        setError(result.error);
+      const res = await loginAction(e, password || 'Demo1234!');
+
+      if ('error' in res) {
+        setError(res.error);
         setLoading(false);
         return;
       }
 
-      // Check if we got real data from the DB
-      const dbProfile = result.profile;
-      const dbTenant = dbProfile?.tenants;
-
-      const tenantData = MOCK_TENANTS[e] || { 
-        id: dbTenant?.id || 'new-tenant', 
-        company: dbTenant?.company_name || companyName || 'İşletme', 
-        sector: dbTenant?.sector || sector || 'other', 
-        plan: dbTenant?.plan || 'trial' 
-      };
-      
-      const user: User = {
-        id: result.user?.id || 'u1',
-        tenant_id: tenantData.id,
-        name: dbProfile?.name || tenantData.company + ' Yöneticisi',
-        email: e,
+      const mockTenant = MOCK_TENANTS[e];
+      const loggedUser: User = {
+        id: res.userId,
+        tenant_id: res.userId + '-tenant',
+        name: res.companyName + ' Yöneticisi',
+        email: res.email,
         role: 'owner',
         created_at: new Date().toISOString(),
       };
-
-      const tenant: Tenant = {
-        id: tenantData.id,
-        company_name: tenantData.company,
-        sector: tenantData.sector as any,
-        plan: tenantData.plan as any,
+      const loggedTenant: Tenant = {
+        id: mockTenant?.id || res.userId + '-tenant',
+        company_name: res.companyName,
+        sector: res.sector as any,
+        plan: (mockTenant?.plan || 'trial') as any,
         status: 'active',
         created_at: new Date().toISOString(),
         currency: 'TRY',
         language: 'tr',
       };
-
-      setAuth(user, tenant, 'supabase-secure-session');
+      setAuth(loggedUser, loggedTenant, 'supabase-secure-session');
       router.push('/dashboard');
     } catch (err: any) {
       console.error('Auth error:', err);
-      setError(err.message || 'Beklenmeyen bir hata oluştu. Lütfen tekrar deneyin.');
+      setError('Beklenmeyen bir hata oluştu. Lütfen tekrar deneyin.');
       setLoading(false);
     }
   };

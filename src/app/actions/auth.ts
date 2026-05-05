@@ -1,156 +1,202 @@
 'use server';
 
-import { createClient } from '@/lib/supabase/server';
+import { createClient } from '@supabase/supabase-js';
 import { MOCK_TENANTS } from '@/lib/mockData';
 
+// ─── Plain serializable types (NO Supabase objects) ──────────────────────────
+type AuthResult =
+  | { success: true; userId: string; email: string; sector: string; companyName: string }
+  | { error: string };
+
+// ─── Error translation ────────────────────────────────────────────────────────
 function translateAuthError(msg: string): string {
   if (!msg) return 'Bilinmeyen bir hata oluştu.';
-  if (msg.includes('already registered')) return 'Bu e-posta adresi zaten sistemimizde kayıtlı.';
-  if (msg.includes('Password should be at least')) return 'Şifreniz en az 6 karakter olmalıdır.';
-  if (msg.includes('rate limit')) return 'Çok fazla deneme yaptınız, lütfen biraz bekleyin.';
-  if (msg.includes('Unable to validate email address') || msg.includes('invalid format')) return 'Lütfen geçerli bir e-posta adresi giriniz (örnek: info@firma.com).';
-  if (msg.includes('Email not confirmed')) return 'Lütfen e-posta adresinizi doğrulayın. (Eğer test ortamındaysanız Supabase panelinden "Confirm Email" ayarını kapatın)';
-  if (msg.includes('Invalid login credentials')) return 'E-posta veya şifre hatalı.';
-  if (msg.includes('Confirm Email')) return 'Kayıt başarılı! Ancak sisteme girmek için Supabase üzerinden "Confirm Email" ayarını kapatmanız gerekmektedir.';
+  const m = msg.toLowerCase();
+  if (m.includes('user already registered') || m.includes('already registered') || m.includes('already been registered'))
+    return 'Bu e-posta adresi zaten sistemimizde kayıtlı.';
+  if (m.includes('password should be at least') || m.includes('weak_password'))
+    return 'Şifreniz en az 6 karakter olmalıdır.';
+  if (m.includes('rate limit') || m.includes('email rate'))
+    return 'Çok fazla deneme yaptınız, lütfen birkaç dakika bekleyin.';
+  if (m.includes('unable to validate email') || m.includes('invalid format') || m.includes('invalid email'))
+    return 'Lütfen geçerli bir e-posta adresi giriniz (örnek: info@firma.com).';
+  if (m.includes('email not confirmed'))
+    return 'E-posta adresiniz henüz doğrulanmamış.';
+  if (m.includes('invalid login credentials') || m.includes('invalid credentials'))
+    return 'E-posta veya şifre hatalı.';
+  if (m.includes('signup disabled') || m.includes('signups not allowed'))
+    return 'Şu an yeni kayıtlar kapalı. Lütfen yönetici ile iletişime geçin.';
+  if (m.includes('email signups are disabled'))
+    return 'E-posta ile kayıt şu an devre dışı. Supabase panelinden "Enable email signup" ayarını açın.';
   return msg;
 }
 
-export async function loginAction(email: string, password?: string) {
-  const sanitizedEmail = email.trim().toLowerCase();
-  const pass = password || 'Demo1234!'; // Default password for demo accounts
+// ─── Helper: build admin client ───────────────────────────────────────────────
+function getAdminClient() {
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
+  if (!url || !key) return null;
+  return createClient(url, key, {
+    auth: { autoRefreshToken: false, persistSession: false },
+  });
+}
 
-  // If Supabase is not configured yet, allow demo mock login
-  if (!process.env.NEXT_PUBLIC_SUPABASE_URL || !process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY) {
-    const isDemo = Object.keys(MOCK_TENANTS).includes(sanitizedEmail) || sanitizedEmail === 'admin@demo.com';
-    if (isDemo) {
-      return { 
-        success: true, 
-        user: { id: 'mock-user-1', email: sanitizedEmail },
-        profile: { name: MOCK_TENANTS[sanitizedEmail]?.company + ' Admin' || 'Admin' } 
+// ─── REGISTER ─────────────────────────────────────────────────────────────────
+export async function registerAction(
+  email: string,
+  password: string,
+  company_name: string,
+  sector: string
+): Promise<AuthResult> {
+  try {
+    const sanitizedEmail = email.trim().toLowerCase();
+
+    if (!sanitizedEmail.includes('@') || !sanitizedEmail.includes('.')) {
+      return { error: 'Lütfen geçerli bir e-posta adresi giriniz (örnek: info@firma.com).' };
+    }
+    if (!company_name.trim()) {
+      return { error: 'Lütfen işletme adınızı girin.' };
+    }
+    if (password.length < 6) {
+      return { error: 'Şifreniz en az 6 karakter olmalıdır.' };
+    }
+
+    const adminClient = getAdminClient();
+    if (!adminClient) {
+      return { error: 'Sunucu yapılandırması eksik. Lütfen yönetici ile iletişime geçin.' };
+    }
+
+    // ── IP rate limit check ───────────────────────────────────────────────────
+    let ip = 'unknown';
+    try {
+      const { headers } = await import('next/headers');
+      const headersList = await headers();
+      ip = headersList.get('x-forwarded-for')?.split(',')[0]?.trim() || 'unknown';
+    } catch (_) {}
+
+    const { count } = await adminClient
+      .from('profiles')
+      .select('*', { count: 'exact', head: true })
+      .eq('ip_address', ip);
+
+    if ((count ?? 0) >= 2 && ip !== 'unknown') {
+      return {
+        error:
+          'Bu cihazdan çok fazla hesap oluşturuldu. Güvenlik nedeniyle aynı cihazdan en fazla 2 hesap açabilirsiniz.',
       };
     }
-    return { error: 'Supabase yapılandırılmamış ve geçersiz demo hesabı girdiniz.' };
-  }
 
-  const supabase = await createClient();
+    // ── Create user (admin API bypasses email confirmation) ───────────────────
+    const { data: created, error: createError } = await adminClient.auth.admin.createUser({
+      email: sanitizedEmail,
+      password,
+      email_confirm: true,
+      user_metadata: {
+        full_name: company_name.trim() + ' Yöneticisi',
+        company_name: company_name.trim(),
+        sector,
+        ip_address: ip,
+      },
+    });
 
-  // Attempt login
-  let { data, error } = await supabase.auth.signInWithPassword({
-    email: sanitizedEmail,
-    password: pass,
-  });
-
-  // If login fails (user does not exist), let's auto-create it for Demo accounts
-  if (error && error.message.includes('Invalid login credentials')) {
-    const isDemo = Object.keys(MOCK_TENANTS).includes(email);
-    if (isDemo) {
-      // Auto register demo account
-      const { data: signUpData, error: signUpError } = await supabase.auth.signUp({
-        email,
-        password: pass,
-        options: {
-          data: {
-            full_name: MOCK_TENANTS[email].company + ' Admin',
-          }
-        }
-      });
-      
-      if (signUpError) {
-        return { error: translateAuthError(signUpError.message) };
-      }
-      data = signUpData as any;
-    } else {
-      return { error: translateAuthError('Invalid login credentials') };
+    if (createError) {
+      return { error: translateAuthError(createError.message) };
     }
-  } else if (error) {
-    return { error: translateAuthError(error.message) };
-  }
 
-  // At this point we are authenticated. We need to check if the tenant exists.
-  // In a real app we'd query the profiles and tenants table.
-  // Since RLS is enabled, we just query profiles:
-  const { data: profile } = await supabase.from('profiles').select('*, tenants(*)').eq('id', data.user?.id).single();
+    if (!created?.user) {
+      return { error: 'Kullanıcı oluşturulamadı. Lütfen tekrar deneyin.' };
+    }
 
-  return { 
-    success: true, 
-    user: data.user,
-    profile 
-  };
-}
-
-export async function logoutAction() {
-  if (!process.env.NEXT_PUBLIC_SUPABASE_URL || !process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY) {
-    return { success: true };
-  }
-  const supabase = await createClient();
-  await supabase.auth.signOut();
-}
-
-export async function registerAction(email: string, password: string, company_name: string, sector: string) {
-  const sanitizedEmail = email.trim().toLowerCase();
-  
-  if (!sanitizedEmail || !sanitizedEmail.includes('@')) {
-    return { error: 'Geçersiz bir e-posta adresi girdiniz.' };
-  }
-
-  const { headers } = await import('next/headers');
-  const headersList = await headers();
-  const ip = headersList.get('x-forwarded-for')?.split(',')[0] || 'unknown';
-
-  const supabase = await createClient();
-  const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
-
-  // Require admin client — if not configured we can't guarantee email confirmation bypass
-  if (!serviceRoleKey || !process.env.NEXT_PUBLIC_SUPABASE_URL) {
-    return { error: 'Sunucu yapılandırması eksik. Lütfen yönetici ile iletişime geçin.' };
-  }
-
-  const { createClient: createSupabaseClient } = await import('@supabase/supabase-js');
-  const adminClient = createSupabaseClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL,
-    serviceRoleKey,
-    { auth: { autoRefreshToken: false, persistSession: false } }
-  );
-
-  // Check IP limit (max 2 accounts per device)
-  const { count, error: countError } = await adminClient
-    .from('profiles')
-    .select('*', { count: 'exact', head: true })
-    .eq('ip_address', ip);
-
-  if (countError) {
-    console.error("IP check error:", countError);
-  } else if (count !== null && count >= 2) {
-    return { error: 'Bu cihazdan çok fazla hesap oluşturuldu. Güvenlik nedeniyle aynı cihazdan en fazla 2 hesap açabilirsiniz.' };
-  }
-
-  // Create user via admin API with email_confirm: true (completely bypasses email verification)
-  const { data: adminData, error: adminError } = await adminClient.auth.admin.createUser({
-    email: sanitizedEmail,
-    password,
-    email_confirm: true,
-    user_metadata: {
-      full_name: company_name + ' Yöneticisi',
-      company_name,
+    // Return only plain serializable data — NO Supabase User objects
+    return {
+      success: true,
+      userId: created.user.id,
+      email: sanitizedEmail,
       sector,
-      ip_address: ip
+      companyName: company_name.trim(),
+    };
+  } catch (err: any) {
+    console.error('[registerAction] Unhandled error:', err);
+    return { error: translateAuthError(err?.message || 'Sunucu hatası oluştu. Lütfen tekrar deneyin.') };
+  }
+}
+
+// ─── LOGIN ────────────────────────────────────────────────────────────────────
+export async function loginAction(
+  email: string,
+  password?: string
+): Promise<AuthResult | { error: string }> {
+  try {
+    const sanitizedEmail = email.trim().toLowerCase();
+    const pass = password || 'Demo1234!';
+
+    // ── Mock / demo accounts ──────────────────────────────────────────────────
+    const mockTenant = MOCK_TENANTS[sanitizedEmail];
+    if (mockTenant && !process.env.NEXT_PUBLIC_SUPABASE_URL) {
+      return {
+        success: true,
+        userId: 'mock-' + mockTenant.id,
+        email: sanitizedEmail,
+        sector: mockTenant.sector,
+        companyName: mockTenant.company,
+      };
     }
-  });
 
-  if (adminError) {
-    return { error: translateAuthError(adminError.message) };
+    const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
+    const anonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+    if (!url || !anonKey) {
+      return { error: 'Supabase yapılandırılmamış.' };
+    }
+
+    // Use admin client for sign-in to avoid cookie serialization issues in server actions
+    const adminClient = getAdminClient();
+    if (!adminClient) {
+      return { error: 'Sunucu yapılandırması eksik.' };
+    }
+
+    // Verify credentials by attempting sign-in with a temporary anon client
+    const anonClient = createClient(url, anonKey, {
+      auth: { autoRefreshToken: false, persistSession: false },
+    });
+
+    const { data: signIn, error: signInError } = await anonClient.auth.signInWithPassword({
+      email: sanitizedEmail,
+      password: pass,
+    });
+
+    if (signInError) {
+      return { error: translateAuthError(signInError.message) };
+    }
+
+    if (!signIn?.user) {
+      return { error: 'Giriş yapılamadı. Lütfen tekrar deneyin.' };
+    }
+
+    // Fetch profile with tenant info
+    const { data: profile } = await adminClient
+      .from('profiles')
+      .select('*, tenants(*)')
+      .eq('id', signIn.user.id)
+      .single();
+
+    const tenantSector = profile?.tenants?.sector || mockTenant?.sector || 'other';
+    const tenantCompany = profile?.tenants?.company_name || mockTenant?.company || 'İşletme';
+
+    return {
+      success: true,
+      userId: signIn.user.id,
+      email: sanitizedEmail,
+      sector: tenantSector,
+      companyName: tenantCompany,
+    };
+  } catch (err: any) {
+    console.error('[loginAction] Unhandled error:', err);
+    return { error: translateAuthError(err?.message || 'Giriş sırasında bir hata oluştu.') };
   }
+}
 
-  // Immediately sign the new user in so they land directly on the dashboard
-  const { data: signInData, error: signInError } = await supabase.auth.signInWithPassword({
-    email: sanitizedEmail,
-    password,
-  });
-
-  if (signInError) {
-    // User was created but sign-in failed — tell them to log in manually
-    return { error: 'Hesabınız oluşturuldu! Ancak otomatik giriş başarısız oldu. Lütfen e-posta ve şifrenizle giriş yapınız.' };
-  }
-
-  return { success: true, user: signInData.user };
+// ─── LOGOUT ───────────────────────────────────────────────────────────────────
+export async function logoutAction(): Promise<{ success: boolean }> {
+  // Session is managed client-side via Zustand; just return success
+  return { success: true };
 }
