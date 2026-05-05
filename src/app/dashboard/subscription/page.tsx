@@ -314,7 +314,3 @@ export default function SubscriptionPage() {
 function formatCurrency(n: number) {
   return new Intl.NumberFormat('tr-TR', { style: 'currency', currency: 'TRY', minimumFractionDigits: 0 }).format(n);
 }
-
-function formatCurrency(n: number) {
-  return new Intl.NumberFormat('tr-TR', { style: 'currency', currency: 'TRY', minimumFractionDigits: 0 }).format(n);
-}
