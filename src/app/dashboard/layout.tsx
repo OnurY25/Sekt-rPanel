@@ -12,32 +12,58 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   const { isAuthenticated, tenant, setAuth } = useStore();
   const router = useRouter();
   const [ready, setReady] = useState(false);
+  const [debugLog, setDebugLog] = useState('Başlatılıyor...');
 
   useEffect(() => {
-    // Already authenticated in memory (e.g. navigated from login)
-    if (isAuthenticated) {
+    console.log('[Dashboard] Mount oldu. Auth durumu:', isAuthenticated);
+    setDebugLog('Oturum kontrol ediliyor...');
+
+    // 1. Zaten bellekte varsa hemen hazırız
+    if (isAuthenticated && tenant) {
+      console.log('[Dashboard] Bellekte oturum bulundu.');
       setReady(true);
       return;
     }
 
-    // Try to restore from localStorage (handles ALL old formats too)
-    const session = loadSession();
-    if (session) {
-      setAuth(session.user, session.tenant, session.token);
-      setReady(true);
-    } else {
-      // No session found — go to login
+    // 2. Bellekte yoksa localStorage'dan yükle
+    try {
+      const session = loadSession();
+      if (session && session.user && session.tenant) {
+        console.log('[Dashboard] LocalStorage oturumu yüklendi:', session.user.email);
+        setAuth(session.user, session.tenant, session.token);
+        setReady(true);
+      } else {
+        console.log('[Dashboard] Oturum bulunamadı, ana sayfaya yönlendiriliyor...');
+        setDebugLog('Oturum bulunamadı, yönlendiriliyor...');
+        router.replace('/');
+      }
+    } catch (err) {
+      console.error('[Dashboard] Yükleme hatası:', err);
+      setDebugLog('Hata oluştu, ana sayfaya dönülüyor...');
       router.replace('/');
     }
-  }, []); // Run once on mount only
 
-  const spinner = (
-    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100vh', background: '#050505' }}>
-      <div style={{ width: '32px', height: '32px', border: '3px solid rgba(99,102,241,0.3)', borderTop: '3px solid #6366f1', borderRadius: '50%', animation: 'spin 0.8s linear infinite' }} />
-    </div>
-  );
+    // 3. Emniyet kilidi: 5 saniye sonra hala hazır değilse ana sayfaya at
+    const timer = setTimeout(() => {
+      if (!isAuthenticated) {
+        console.warn('[Dashboard] Zaman aşımı! Yönlendiriliyor...');
+        router.replace('/');
+      }
+    }, 5000);
 
-  if (!ready || !isAuthenticated || !tenant) return spinner;
+    return () => clearTimeout(timer);
+  }, [isAuthenticated, tenant, router, setAuth]);
+
+  // Yükleme ekranı
+  if (!ready || !isAuthenticated || !tenant) {
+    return (
+      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '100vh', background: '#050505', color: 'white', gap: '20px' }}>
+        <div style={{ width: '40px', height: '40px', border: '3px solid rgba(99,102,241,0.3)', borderTop: '3px solid #6366f1', borderRadius: '50%', animation: 'spin 0.8s linear infinite' }} />
+        <p style={{ fontSize: '14px', color: '#64748b' }}>{debugLog}</p>
+        <style>{`@keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }`}</style>
+      </div>
+    );
+  }
 
   const config = getSectorConfig(tenant.sector);
   const sectorClass = `sector-${tenant.sector}`;
