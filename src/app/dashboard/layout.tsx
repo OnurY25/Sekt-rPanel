@@ -13,20 +13,30 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   const router = useRouter();
 
   useEffect(() => {
-    // Try to restore from localStorage
-    const stored_user = localStorage.getItem('saas_user');
-    const stored_tenant = localStorage.getItem('saas_tenant');
-    const stored_token = localStorage.getItem('saas_token');
+    const restoreSession = () => {
+      try {
+        const stored_user = localStorage.getItem('saas_user');
+        const stored_tenant = localStorage.getItem('saas_tenant');
+        const stored_token = localStorage.getItem('saas_token');
 
-    if (!isAuthenticated) {
-      if (stored_user && stored_tenant && stored_token) {
-        const { setAuth } = useStore.getState();
-        setAuth(JSON.parse(stored_user), JSON.parse(stored_tenant), stored_token);
-      } else {
-        router.push('/');
+        if (!isAuthenticated) {
+          if (stored_user && stored_tenant && stored_token) {
+            const user = JSON.parse(stored_user);
+            const tenant = JSON.parse(stored_tenant);
+            setAuth(user, tenant, stored_token);
+          } else {
+            router.replace('/');
+          }
+        }
+      } catch (err) {
+        console.error('Session restoration failed:', err);
+        localStorage.clear();
+        router.replace('/');
       }
-    }
-  }, [isAuthenticated, router]);
+    };
+
+    restoreSession();
+  }, [isAuthenticated, router, setAuth]);
 
   if (!isAuthenticated || !tenant) {
     return (

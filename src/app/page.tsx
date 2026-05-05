@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { useStore } from '@/lib/store';
 import { MOCK_TENANTS } from '@/lib/mockData';
@@ -29,6 +29,14 @@ export default function LandingPage() {
   const [showPass, setShowPass] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+
+  // Auto-redirect if already authenticated (for F5 on landing page)
+  useEffect(() => {
+    const stored_token = localStorage.getItem('saas_token');
+    if (stored_token) {
+      router.replace('/dashboard');
+    }
+  }, [router]);
 
   const handleAuth = async (loginEmail?: string) => {
     const e = loginEmail || email;
